@@ -196,7 +196,24 @@ class UniversalAgent(BaseAgent):
         """Execute analysis and handle errors"""
         try:
             ai_response = self.process(prompt)
-            result = json.loads(ai_response)
+            
+            # Debug: Print the raw response if parsing fails
+            try:
+                result = json.loads(ai_response)
+            except json.JSONDecodeError as json_err:
+                print(f"DEBUG: JSON parsing failed for {policy_check.get('check_type', 'unknown')}")
+                print(f"DEBUG: Raw AI response (first 500 chars): {str(ai_response)[:500]}")
+                print(f"DEBUG: JSON error: {str(json_err)}")
+                
+                return {
+                    'check_type': policy_check.get('check_type'),
+                    'description': policy_check.get('description'),
+                    'passed': False,
+                    'reason': f"Analysis error: Could not parse AI response. Response was: {str(ai_response)[:200]}...",
+                    'confidence': 0.0,
+                    'domain': self.domain,
+                    'agent_type': 'universal'
+                }
             
             # Add metadata
             result.update({
@@ -210,21 +227,14 @@ class UniversalAgent(BaseAgent):
             
             return result
             
-        except json.JSONDecodeError:
-            return {
-                'check_type': policy_check.get('check_type'),
-                'description': policy_check.get('description'),
-                'passed': False,
-                'reason': f"Analysis error: Could not parse AI response",
-                'domain': self.domain,
-                'agent_type': 'universal'
-            }
         except Exception as e:
+            print(f"DEBUG: General error in _execute_analysis: {str(e)}")
             return {
                 'check_type': policy_check.get('check_type'),
                 'description': policy_check.get('description'),
                 'passed': False,
                 'reason': f"Universal agent error: {str(e)}",
+                'confidence': 0.0,
                 'domain': self.domain,
                 'agent_type': 'universal'
             }

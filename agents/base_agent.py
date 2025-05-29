@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict
 import openai
 import os
+import json
 
 class BaseAgent(ABC):
     """Base class for all compliance checking agents"""
@@ -14,7 +15,7 @@ class BaseAgent(ABC):
         """Process a prompt using OpenAI API"""
         try:
             response = self.client.chat.completions.create(
-                model="gpt-4.1",
+                model="gpt-4",
                 messages=[
                     {"role": "system", "content": f"You are a {self.agent_type} agent for credit policy compliance checking."},
                     {"role": "user", "content": prompt}
@@ -23,7 +24,14 @@ class BaseAgent(ABC):
             )
             return response.choices[0].message.content
         except Exception as e:
-            return f"Error processing request: {str(e)}"
+            # Return a valid JSON error response instead of a string
+            error_response = {
+                "passed": False,
+                "reason": f"OpenAI API error: {str(e)}",
+                "confidence": 0.0,
+                "error": True
+            }
+            return json.dumps(error_response)
     
     @abstractmethod
     def check(self, policy_check: Dict, credit_data: Dict) -> Dict:

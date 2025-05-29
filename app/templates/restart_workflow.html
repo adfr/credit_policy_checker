@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Policy Compliance Assessment - Restarted Workflow</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <!-- Header -->
+        <div class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-gray-800 mb-2">Policy Compliance Assessment</h1>
+            <p class="text-lg text-gray-600">Restarted Workflow: Upload Policy → Select Agents → Assess Document → Get Results</p>
+        </div>
+
+        <!-- Progress Steps -->
+        <div class="mb-8">
+            <div class="flex items-center justify-center space-x-4">
+                <div id="step1" class="flex items-center space-x-2 p-3 rounded-lg bg-blue-100 border-2 border-blue-500">
+                    <i class="fas fa-upload text-blue-600"></i>
+                    <span class="font-medium text-blue-800">1. Upload Policy</span>
+                </div>
+                <div class="h-1 w-8 bg-gray-300"></div>
+                <div id="step2" class="flex items-center space-x-2 p-3 rounded-lg bg-gray-100 border-2 border-gray-300">
+                    <i class="fas fa-user-cog text-gray-400"></i>
+                    <span class="font-medium text-gray-600">2. Select Agents</span>
+                </div>
+                <div class="h-1 w-8 bg-gray-300"></div>
+                <div id="step3" class="flex items-center space-x-2 p-3 rounded-lg bg-gray-100 border-2 border-gray-300">
+                    <i class="fas fa-file-alt text-gray-400"></i>
+                    <span class="font-medium text-gray-600">3. Upload Document</span>
+                </div>
+                <div class="h-1 w-8 bg-gray-300"></div>
+                <div id="step4" class="flex items-center space-x-2 p-3 rounded-lg bg-gray-100 border-2 border-gray-300">
+                    <i class="fas fa-check-circle text-gray-400"></i>
+                    <span class="font-medium text-gray-600">4. Assessment</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Content Area -->
+        <div class="max-w-6xl mx-auto">
+            
+            <!-- Step 1: Upload Policy Document -->
+            <div id="step1-content" class="bg-white rounded-lg shadow-lg p-6 mb-6">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">
+                    <i class="fas fa-upload text-blue-600 mr-2"></i>
+                    Step 1: Upload Policy Document
+                </h2>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        Select policy document to analyze and create compliance agents
+                    </label>
+                    <input type="file" id="policyFile" accept=".pdf,.docx,.doc,.txt" 
+                           class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                </div>
+                <button id="uploadPolicyBtn" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+                    <i class="fas fa-upload mr-2"></i>Upload and Analyze Policy
+                </button>
+                
+                <!-- Policy Analysis Results -->
+                <div id="policyResults" class="mt-6 hidden">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-3">Policy Analysis Results</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                        <div class="bg-blue-50 p-4 rounded-lg">
+                            <div class="text-2xl font-bold text-blue-800" id="checksExtracted">0</div>
+                            <div class="text-sm text-blue-600">Compliance Checks Found</div>
+                        </div>
+                        <div class="bg-green-50 p-4 rounded-lg">
+                            <div class="text-2xl font-bold text-green-800" id="agentsCreated">0</div>
+                            <div class="text-sm text-green-600">Agents Created</div>
+                        </div>
+                        <div class="bg-purple-50 p-4 rounded-lg">
+                            <div class="text-xl font-bold text-purple-800" id="complexityLevel">-</div>
+                            <div class="text-sm text-purple-600">Policy Complexity</div>
+                        </div>
+                    </div>
+                    <button id="proceedToAgentsBtn" class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition-colors">
+                        <i class="fas fa-arrow-right mr-2"></i>Proceed to Agent Selection
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 2: Select Agents -->
+            <div id="step2-content" class="bg-white rounded-lg shadow-lg p-6 mb-6 hidden">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">
+                    <i class="fas fa-user-cog text-green-600 mr-2"></i>
+                    Step 2: Select Compliance Agents
+                </h2>
+                <p class="text-gray-600 mb-4">Choose which compliance checks you want to assess against your document.</p>
+                
+                <!-- Agent Selection Controls -->
+                <div class="mb-4 flex space-x-4">
+                    <button id="selectAllBtn" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+                        Select All
+                    </button>
+                    <button id="selectNoneBtn" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">
+                        Select None
+                    </button>
+                    <div class="ml-auto">
+                        <span class="text-sm text-gray-600">Selected: </span>
+                        <span id="selectedCount" class="font-semibold text-blue-600">0</span>
+                        <span class="text-sm text-gray-600"> of </span>
+                        <span id="totalCount" class="font-semibold text-blue-600">0</span>
+                    </div>
+                </div>
+
+                <!-- Agents List -->
+                <div id="agentsList" class="space-y-4 mb-6 max-h-96 overflow-y-auto">
+                    <!-- Agent items will be populated here -->
+                </div>
+
+                <button id="proceedToDocumentBtn" class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-400" disabled>
+                    <i class="fas fa-arrow-right mr-2"></i>Proceed to Document Upload
+                </button>
+            </div>
+
+            <!-- Step 3: Upload Assessment Document -->
+            <div id="step3-content" class="bg-white rounded-lg shadow-lg p-6 mb-6 hidden">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">
+                    <i class="fas fa-file-alt text-orange-600 mr-2"></i>
+                    Step 3: Upload Document for Assessment
+                </h2>
+                <p class="text-gray-600 mb-4">Upload the document you want to assess against the selected compliance agents.</p>
+                
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        Select document to assess
+                    </label>
+                    <input type="file" id="assessmentFile" accept=".pdf,.docx,.doc,.txt" 
+                           class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-orange-50 file:text-orange-700 hover:file:bg-orange-100">
+                </div>
+                
+                <button id="proceedToAssessmentBtn" class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition-colors">
+                    <i class="fas fa-arrow-right mr-2"></i>Proceed to Compliance Assessment
+                </button>
+            </div>
+
+            <!-- Step 4: Run Assessment -->
+            <div id="step4-content" class="bg-white rounded-lg shadow-lg p-6 mb-6 hidden">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">
+                    <i class="fas fa-check-circle text-green-600 mr-2"></i>
+                    Step 4: Compliance Assessment
+                </h2>
+                
+                <div class="text-center mb-6">
+                    <button id="runAssessmentBtn" class="bg-green-600 text-white px-8 py-3 rounded-lg text-lg font-semibold hover:bg-green-700 transition-colors">
+                        <i class="fas fa-play mr-2"></i>Run Compliance Assessment
+                    </button>
+                </div>
+
+                <!-- Assessment Progress -->
+                <div id="assessmentProgress" class="hidden mb-6">
+                    <div class="bg-blue-50 p-4 rounded-lg">
+                        <div class="flex items-center">
+                            <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mr-3"></div>
+                            <span class="text-blue-800 font-medium">Running compliance assessment...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Assessment Results -->
+                <div id="assessmentResults" class="hidden">
+                    <h3 class="text-xl font-semibold text-gray-800 mb-4">Assessment Results</h3>
+                    
+                    <!-- Summary Cards -->
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                        <div class="bg-green-50 p-4 rounded-lg text-center">
+                            <div class="text-2xl font-bold text-green-800" id="passedChecks">0</div>
+                            <div class="text-sm text-green-600">Passed</div>
+                        </div>
+                        <div class="bg-red-50 p-4 rounded-lg text-center">
+                            <div class="text-2xl font-bold text-red-800" id="failedChecks">0</div>
+                            <div class="text-sm text-red-600">Failed</div>
+                        </div>
+                        <div class="bg-yellow-50 p-4 rounded-lg text-center">
+                            <div class="text-2xl font-bold text-yellow-800" id="inconclusiveChecks">0</div>
+                            <div class="text-sm text-yellow-600">Inconclusive</div>
+                        </div>
+                        <div class="bg-blue-50 p-4 rounded-lg text-center">
+                            <div class="text-2xl font-bold text-blue-800" id="overallScore">0%</div>
+                            <div class="text-sm text-blue-600">Overall Score</div>
+                        </div>
+                    </div>
+
+                    <!-- Detailed Results -->
+                    <div class="mb-6">
+                        <h4 class="text-lg font-semibold text-gray-800 mb-3">Detailed Results</h4>
+                        <div id="detailedResults" class="space-y-4">
+                            <!-- Detailed results will be populated here -->
+                        </div>
+                    </div>
+
+                    <!-- Recommendations -->
+                    <div id="recommendationsSection" class="mb-6">
+                        <h4 class="text-lg font-semibold text-gray-800 mb-3">Recommendations</h4>
+                        <div id="recommendations" class="space-y-3">
+                            <!-- Recommendations will be populated here -->
+                        </div>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="text-center">
+                        <button id="restartWorkflowBtn" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors mr-4">
+                            <i class="fas fa-redo mr-2"></i>Start New Assessment
+                        </button>
+                        <button id="exportResultsBtn" class="bg-gray-600 text-white px-6 py-2 rounded-lg hover:bg-gray-700 transition-colors">
+                            <i class="fas fa-download mr-2"></i>Export Results
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+        <div class="bg-white p-8 rounded-lg text-center">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p class="text-gray-800 font-medium" id="loadingText">Processing...</p>
+        </div>
+    </div>
+
+    <script>
+        // Global state
+        let currentState = {
+            step: 1,
+            policyAnalysis: null,
+            selectedChecks: [],
+            documentData: null,
+            assessmentResults: null
+        };
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeWorkflow();
+        });
+
+        function initializeWorkflow() {
+            // Set up event listeners
+            document.getElementById('uploadPolicyBtn').addEventListener('click', uploadPolicy);
+            document.getElementById('proceedToAgentsBtn').addEventListener('click', () => goToStep(2));
+            document.getElementById('selectAllBtn').addEventListener('click', selectAllAgents);
+            document.getElementById('selectNoneBtn').addEventListener('click', selectNoAgents);
+            document.getElementById('proceedToDocumentBtn').addEventListener('click', () => goToStep(3));
+            document.getElementById('proceedToAssessmentBtn').addEventListener('click', () => goToStep(4));
+            document.getElementById('runAssessmentBtn').addEventListener('click', runAssessment);
+            document.getElementById('restartWorkflowBtn').addEventListener('click', restartWorkflow);
+            document.getElementById('exportResultsBtn').addEventListener('click', exportResults);
+        }
+
+        function showLoading(text = 'Processing...') {
+            document.getElementById('loadingText').textContent = text;
+            document.getElementById('loadingOverlay').classList.remove('hidden');
+        }
+
+        function hideLoading() {
+            document.getElementById('loadingOverlay').classList.add('hidden');
+        }
+
+        function goToStep(stepNumber) {
+            // Update progress indicators
+            for (let i = 1; i <= 4; i++) {
+                const step = document.getElementById(`step${i}`);
+                const content = document.getElementById(`step${i}-content`);
+                
+                if (i < stepNumber) {
+                    // Completed step
+                    step.className = 'flex items-center space-x-2 p-3 rounded-lg bg-green-100 border-2 border-green-500';
+                    step.querySelector('i').className = step.querySelector('i').className.replace(/text-\w+-\d+/, 'text-green-600');
+                    step.querySelector('span').className = 'font-medium text-green-800';
+                } else if (i === stepNumber) {
+                    // Current step
+                    step.className = 'flex items-center space-x-2 p-3 rounded-lg bg-blue-100 border-2 border-blue-500';
+                    step.querySelector('i').className = step.querySelector('i').className.replace(/text-\w+-\d+/, 'text-blue-600');
+                    step.querySelector('span').className = 'font-medium text-blue-800';
+                    content.classList.remove('hidden');
+                } else {
+                    // Future step
+                    step.className = 'flex items-center space-x-2 p-3 rounded-lg bg-gray-100 border-2 border-gray-300';
+                    step.querySelector('i').className = step.querySelector('i').className.replace(/text-\w+-\d+/, 'text-gray-400');
+                    step.querySelector('span').className = 'font-medium text-gray-600';
+                    content.classList.add('hidden');
+                }
+            }
+            
+            currentState.step = stepNumber;
+        }
+
+        async function uploadPolicy() {
+            const fileInput = document.getElementById('policyFile');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                alert('Please select a policy file');
+                return;
+            }
+
+            showLoading('Analyzing policy document...');
+
+            const formData = new FormData();
+            formData.append('file', file);
+            // Add domain hint if needed
+            formData.append('domain_hint', 'financial');
+
+            try {
+                const response = await fetch('/api/extract-policy-agents', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+                hideLoading();
+
+                if (result.success) {
+                    currentState.policyAnalysis = result;
+                    displayPolicyResults(result);
+                } else {
+                    alert('Error: ' + result.error);
+                }
+            } catch (error) {
+                hideLoading();
+                alert('Error uploading policy: ' + error.message);
+            }
+        }
+
+        function displayPolicyResults(result) {
+            // Update to use new agent-based structure
+            const totalAgents = result.agent_counts.threshold + result.agent_counts.criteria + 
+                              result.agent_counts.score + result.agent_counts.qualitative;
+            
+            document.getElementById('checksExtracted').textContent = totalAgents;
+            document.getElementById('agentsCreated').textContent = totalAgents;
+            document.getElementById('complexityLevel').textContent = 
+                totalAgents > 15 ? 'High' : totalAgents > 8 ? 'Medium' : 'Low';
+            
+            document.getElementById('policyResults').classList.remove('hidden');
+            
+            // Populate agents list for step 2
+            populateAgentsList(result.extracted_agents);
+        }
+
+        async function selectAllAgents() {
+            const checkboxes = document.querySelectorAll('input[name="agentCheck"]:not(:checked)');
+            checkboxes.forEach(cb => cb.click());
+        }
+
+        async function selectNoAgents() {
+            const checkboxes = document.querySelectorAll('input[name="agentCheck"]:checked');
+            checkboxes.forEach(cb => cb.click());
+        }
+
+        function updateSelectedCount() {
+            const selected = document.querySelectorAll('input[name="agentCheck"]:checked').length;
+            const total = document.querySelectorAll('input[name="agentCheck"]').length;
+            
+            document.getElementById('selectedCount').textContent = selected;
+            document.getElementById('totalCount').textContent = total;
+            
+            const proceedBtn = document.getElementById('proceedToDocumentBtn');
+            proceedBtn.disabled = selected === 0;
+            proceedBtn.classList.toggle('disabled:bg-gray-400', selected === 0);
+        }
+
+        // Continue with more functions...
+        async function runAssessment() {
+            const selectedCheckboxes = document.querySelectorAll('input[name="agentCheck"]:checked');
+            
+            if (selectedCheckboxes.length === 0) {
+                alert('Please select at least one agent for compliance checking');
+                return;
+            }
+            
+            // Get selected agents from currentState
+            const selectedAgents = [];
+            const extractedAgents = currentState.policyAnalysis.extracted_agents;
+            
+            // Build list of selected agents from all types
+            const allAgentTypes = ['threshold_agents', 'criteria_agents', 'score_agents', 'qualitative_agents'];
+            
+            selectedCheckboxes.forEach(checkbox => {
+                const agentId = checkbox.value;
+                
+                // Find the agent in any of the agent types
+                for (const agentType of allAgentTypes) {
+                    if (extractedAgents[agentType]) {
+                        const agent = extractedAgents[agentType].find(a => a.agent_id === agentId);
+                        if (agent) {
+                            selectedAgents.push(agent);
+                            break;
+                        }
+                    }
+                }
+            });
+
+            const fileInput = document.getElementById('assessmentFile');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                alert('Please upload a document to assess');
+                return;
+            }
+
+            showLoading('Running compliance assessment...');
+            document.getElementById('assessmentProgress').classList.remove('hidden');
+
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('selected_agents', JSON.stringify(selectedAgents));
+                formData.append('applicant_data', JSON.stringify({})); // Empty for now
+
+                const response = await fetch('/api/check-compliance-with-agents', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+                hideLoading();
+                document.getElementById('assessmentProgress').classList.add('hidden');
+
+                if (result.success) {
+                    currentState.assessmentResults = result;
+                    displayAssessmentResults(result);
+                } else {
+                    alert('Error: ' + result.error);
+                }
+            } catch (error) {
+                hideLoading();
+                document.getElementById('assessmentProgress').classList.add('hidden');
+                alert('Error running assessment: ' + error.message);
+            }
+        }
+
+        function displayAssessmentResults(result) {
+            const complianceResults = result.compliance_results;
+            const agentResults = complianceResults.agent_results;
+            const summary = complianceResults.compliance_summary;
+            
+            // Update summary cards
+            document.getElementById('passedChecks').textContent = summary.statistics.passed_agents;
+            document.getElementById('failedChecks').textContent = summary.statistics.failed_agents;
+            document.getElementById('inconclusiveChecks').textContent = 0; // Not in new structure
+            document.getElementById('overallScore').textContent = Math.round(summary.statistics.pass_rate * 100) + '%';
+
+            // Display detailed results
+            const detailedResults = document.getElementById('detailedResults');
+            detailedResults.innerHTML = '';
+            
+            agentResults.forEach(result => {
+                const resultDiv = document.createElement('div');
+                resultDiv.className = 'border rounded-lg p-4 ' + getResultColorClass(result.passed);
+                
+                resultDiv.innerHTML = `
+                    <div class="flex items-start justify-between">
+                        <div class="flex-1">
+                            <h5 class="font-semibold text-gray-800">${result.agent_config.agent_name}</h5>
+                            <p class="text-sm text-gray-600 mb-2">Priority: ${result.agent_config.priority}</p>
+                            <p class="text-sm">${result.reason}</p>
+                        </div>
+                        <div class="ml-4 text-right">
+                            <span class="inline-block px-3 py-1 rounded-full text-xs font-medium ${getResultBadgeClass(result.passed)}">
+                                ${formatResultStatus(result.passed)}
+                            </span>
+                            <div class="text-xs text-gray-500 mt-1">
+                                Confidence: ${Math.round((result.confidence || 0) * 100)}%
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                detailedResults.appendChild(resultDiv);
+            });
+
+            // Display recommendations
+            const recommendations = document.getElementById('recommendations');
+            recommendations.innerHTML = '';
+            
+            summary.recommendations.forEach(rec => {
+                const recDiv = document.createElement('div');
+                recDiv.className = 'bg-yellow-50 border-l-4 border-yellow-400 p-4';
+                
+                recDiv.innerHTML = `
+                    <div class="flex">
+                        <div class="flex-shrink-0">
+                            <i class="fas fa-exclamation-triangle text-yellow-400"></i>
+                        </div>
+                        <div class="ml-3">
+                            <p class="text-sm text-yellow-800 font-medium">${rec}</p>
+                        </div>
+                    </div>
+                `;
+                
+                recommendations.appendChild(recDiv);
+            });
+
+            document.getElementById('assessmentResults').classList.remove('hidden');
+        }
+
+        function getResultColorClass(result) {
+            if (result === true) return 'bg-green-50 border-green-200';
+            if (result === false) return 'bg-red-50 border-red-200';
+            return 'bg-yellow-50 border-yellow-200';
+        }
+
+        function getResultBadgeClass(result) {
+            if (result === true) return 'bg-green-100 text-green-800';
+            if (result === false) return 'bg-red-100 text-red-800';
+            return 'bg-yellow-100 text-yellow-800';
+        }
+
+        function formatResultStatus(result) {
+            if (result === true) return 'PASSED';
+            if (result === false) return 'FAILED';
+            return 'INCONCLUSIVE';
+        }
+
+        function restartWorkflow() {
+            if (confirm('Are you sure you want to start a new assessment? This will clear all current data.')) {
+                location.reload();
+            }
+        }
+
+        function exportResults() {
+            if (!currentState.assessmentResults) {
+                alert('No results to export');
+                return;
+            }
+            
+            const data = JSON.stringify(currentState.assessmentResults, null, 2);
+            const blob = new Blob([data], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'compliance_assessment_results.json';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // When step 2 becomes active, populate agents list
+        function populateAgentsList(extractedAgents) {
+            const agentsList = document.getElementById('agentsList');
+            agentsList.innerHTML = '';
+            
+            // Flatten all agents from different types into a single list
+            const allAgents = [];
+            
+            // Add threshold agents
+            if (extractedAgents.threshold_agents) {
+                extractedAgents.threshold_agents.forEach(agent => {
+                    allAgents.push({
+                        ...agent,
+                        agent_type: 'threshold',
+                        display_type: 'Threshold Check'
+                    });
+                });
+            }
+            
+            // Add criteria agents
+            if (extractedAgents.criteria_agents) {
+                extractedAgents.criteria_agents.forEach(agent => {
+                    allAgents.push({
+                        ...agent,
+                        agent_type: 'criteria',
+                        display_type: 'Criteria Check'
+                    });
+                });
+            }
+            
+            // Add score agents
+            if (extractedAgents.score_agents) {
+                extractedAgents.score_agents.forEach(agent => {
+                    allAgents.push({
+                        ...agent,
+                        agent_type: 'score',
+                        display_type: 'Score Calculation'
+                    });
+                });
+            }
+            
+            // Add qualitative agents
+            if (extractedAgents.qualitative_agents) {
+                extractedAgents.qualitative_agents.forEach(agent => {
+                    allAgents.push({
+                        ...agent,
+                        agent_type: 'qualitative',
+                        display_type: 'Qualitative Assessment'
+                    });
+                });
+            }
+            
+            allAgents.forEach((agent, index) => {
+                const agentDiv = document.createElement('div');
+                agentDiv.className = 'border rounded-lg p-4 hover:bg-gray-50';
+                
+                const priorityColor = {
+                    'critical': 'bg-red-100 text-red-800',
+                    'high': 'bg-orange-100 text-orange-800',
+                    'medium': 'bg-yellow-100 text-yellow-800',
+                    'low': 'bg-gray-100 text-gray-800'
+                }[agent.priority] || 'bg-gray-100 text-gray-800';
+                
+                const typeColor = {
+                    'threshold': 'bg-blue-100 text-blue-800',
+                    'criteria': 'bg-green-100 text-green-800',
+                    'score': 'bg-purple-100 text-purple-800',
+                    'qualitative': 'bg-indigo-100 text-indigo-800'
+                }[agent.agent_type] || 'bg-gray-100 text-gray-800';
+                
+                agentDiv.innerHTML = `
+                    <div class="flex items-start">
+                        <input type="checkbox" name="agentCheck" value="${agent.agent_id}" 
+                               class="mt-1 mr-3" onchange="updateSelectedCount()" checked>
+                        <div class="flex-1">
+                            <div class="flex items-center justify-between mb-2">
+                                <h4 class="font-semibold text-gray-800">${agent.agent_name}</h4>
+                                <div class="flex space-x-2">
+                                    <span class="px-2 py-1 ${typeColor} text-xs rounded-full">
+                                        ${agent.display_type}
+                                    </span>
+                                    <span class="px-2 py-1 ${priorityColor} text-xs rounded-full">
+                                        ${agent.priority}
+                                    </span>
+                                </div>
+                            </div>
+                            <p class="text-sm text-gray-600 mb-2">${agent.description}</p>
+                            <p class="text-xs text-gray-500 mb-1"><strong>Requirement:</strong> ${agent.requirement}</p>
+                            <p class="text-xs text-gray-500"><strong>Data needed:</strong> ${agent.data_fields.join(', ')}</p>
+                        </div>
+                    </div>
+                `;
+                
+                agentsList.appendChild(agentDiv);
+            });
+            
+            updateSelectedCount();
+        }
+    </script>
+</body>
+</html> 
