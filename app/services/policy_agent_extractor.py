@@ -2,60 +2,243 @@ from typing import Dict, List, Optional
 from agents.base_agent import GeneralAgent
 import json
 import tiktoken
+import logging
+import os
+import re
+
+# Set up logging for policy agent extraction
+log_dir = "logs"
+os.makedirs(log_dir, exist_ok=True)
+
+# Configure logging to both file and console
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(f'{log_dir}/policy_extraction.log'),
+        logging.StreamHandler()  # Console output
+    ]
+)
+logger = logging.getLogger(__name__)
 
 class PolicyAgentExtractor:
     """Extracts policy information from documents and generates compliance agents"""
     
     def __init__(self):
         self.agent = GeneralAgent("policy_agent_extractor")
-        self.max_tokens = 6000  # Leave buffer for response
+        self.max_tokens = 500  # Reduced for smaller, more focused chunks
+        self.min_chunk_tokens = 200  # Minimum meaningful chunk size
         self.encoding = tiktoken.encoding_for_model("gpt-4")
     
     def _count_tokens(self, text: str) -> int:
         """Count tokens in text"""
         return len(self.encoding.encode(text))
     
-    def _chunk_document(self, text: str, max_chunk_tokens: int = 4000) -> List[str]:
-        """Split document into chunks that fit within token limits"""
-        # Split by paragraphs first
-        paragraphs = text.split('\n\n')
+    def _smart_chunk_document(self, text: str, target_chunk_tokens: int = 400) -> List[str]:
+        """
+        Split document into smaller, smarter chunks based on content structure
+        Focuses on policy sections, requirements, and logical breaks
+        """
+        logger.info(f"Starting smart chunking with target size: {target_chunk_tokens} tokens")
+        
+        # First, try to identify major sections
+        sections = self._identify_policy_sections(text)
+        
+        if sections:
+            logger.info(f"Identified {len(sections)} major policy sections")
+            chunks = []
+            
+            for i, section in enumerate(sections):
+                section_tokens = self._count_tokens(section)
+                logger.info(f"Section {i+1}: {section_tokens} tokens")
+                
+                if section_tokens <= target_chunk_tokens:
+                    # Section fits in one chunk
+                    chunks.append(section)
+                else:
+                    # Break section into smaller chunks
+                    sub_chunks = self._chunk_by_content_breaks(section, target_chunk_tokens)
+                    chunks.extend(sub_chunks)
+                    logger.info(f"Section {i+1} split into {len(sub_chunks)} sub-chunks")
+        else:
+            # Fallback to content-based chunking
+            logger.info("No clear sections found, using content-based chunking")
+            chunks = self._chunk_by_content_breaks(text, target_chunk_tokens)
+        
+        # Filter out very small chunks and merge them
+        final_chunks = self._merge_small_chunks(chunks)
+        
+        logger.info(f"Final chunking result: {len(final_chunks)} chunks")
+        for i, chunk in enumerate(final_chunks):
+            chunk_tokens = self._count_tokens(chunk)
+            logger.info(f"Chunk {i+1}: {chunk_tokens} tokens")
+        
+        return final_chunks
+    
+    def _identify_policy_sections(self, text: str) -> List[str]:
+        """
+        Identify major policy sections based on headers, numbering, and content patterns
+        """
+        import re
+        
+        # Common policy section patterns
+        section_patterns = [
+            r'\n\s*(\d+\.|\d+\)\s|\([a-z]\)|\([0-9]+\))\s*[A-Z][^.\n]+',  # Numbered sections
+            r'\n\s*[A-Z][A-Z\s]+:',  # ALL CAPS headers with colon
+            r'\n\s*[A-Z][a-zA-Z\s]+ Requirements?:?',  # Requirements sections
+            r'\n\s*[A-Z][a-zA-Z\s]+ Policy:?',  # Policy sections
+            r'\n\s*[A-Z][a-zA-Z\s]+ Guidelines?:?',  # Guidelines sections
+            r'\n\s*Approval\s+Limits?:?',  # Approval limits
+            r'\n\s*Credit\s+Requirements?:?',  # Credit requirements
+            r'\n\s*Documentation\s+Requirements?:?',  # Documentation
+        ]
+        
+        # Find all section breaks
+        breaks = [0]  # Start of document
+        
+        for pattern in section_patterns:
+            matches = re.finditer(pattern, text, re.IGNORECASE | re.MULTILINE)
+            for match in matches:
+                breaks.append(match.start())
+        
+        # Add end of document
+        breaks.append(len(text))
+        breaks = sorted(set(breaks))  # Remove duplicates and sort
+        
+        if len(breaks) <= 2:  # Only start and end found
+            return []
+        
+        # Create sections
+        sections = []
+        for i in range(len(breaks) - 1):
+            section = text[breaks[i]:breaks[i+1]].strip()
+            if len(section) > 100:  # Ignore very small sections
+                sections.append(section)
+        
+        return sections
+    
+    def _chunk_by_content_breaks(self, text: str, target_tokens: int) -> List[str]:
+        """
+        Chunk text by natural content breaks (paragraphs, sentences, lists)
+        """
         chunks = []
+        
+        # Split by double line breaks (paragraphs)
+        paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
+        
         current_chunk = ""
         
         for paragraph in paragraphs:
-            # Check if adding this paragraph exceeds the limit
+            # Check if adding this paragraph exceeds target
             test_chunk = current_chunk + "\n\n" + paragraph if current_chunk else paragraph
+            test_tokens = self._count_tokens(test_chunk)
             
-            if self._count_tokens(test_chunk) <= max_chunk_tokens:
+            if test_tokens <= target_tokens:
                 current_chunk = test_chunk
             else:
-                # Save current chunk if it's not empty
-                if current_chunk:
+                # Save current chunk if it has meaningful content
+                if current_chunk and self._count_tokens(current_chunk) >= self.min_chunk_tokens:
                     chunks.append(current_chunk)
                 
                 # Check if single paragraph is too large
-                if self._count_tokens(paragraph) > max_chunk_tokens:
-                    # Split paragraph by sentences
-                    sentences = paragraph.split('. ')
-                    temp_chunk = ""
-                    for sentence in sentences:
-                        test_sentence = temp_chunk + ". " + sentence if temp_chunk else sentence
-                        if self._count_tokens(test_sentence) <= max_chunk_tokens:
-                            temp_chunk = test_sentence
-                        else:
-                            if temp_chunk:
-                                chunks.append(temp_chunk)
-                            temp_chunk = sentence
-                    if temp_chunk:
-                        current_chunk = temp_chunk
+                para_tokens = self._count_tokens(paragraph)
+                if para_tokens > target_tokens:
+                    # Split paragraph by sentences or logical breaks
+                    sub_chunks = self._split_large_paragraph(paragraph, target_tokens)
+                    chunks.extend(sub_chunks)
+                    current_chunk = ""
                 else:
                     current_chunk = paragraph
         
-        # Add the last chunk
-        if current_chunk:
+        # Add final chunk
+        if current_chunk and self._count_tokens(current_chunk) >= self.min_chunk_tokens:
             chunks.append(current_chunk)
         
         return chunks
+    
+    def _split_large_paragraph(self, paragraph: str, target_tokens: int) -> List[str]:
+        """
+        Split a large paragraph by sentences, bullet points, or other logical breaks
+        """
+        chunks = []
+        
+        # Try splitting by bullet points or numbered lists first
+        if '•' in paragraph or '- ' in paragraph or re.search(r'\d+\.', paragraph):
+            # Split by list items
+            items = re.split(r'(?=\s*[•\-]|\s*\d+\.)', paragraph)
+            current_chunk = ""
+            
+            for item in items:
+                if not item.strip():
+                    continue
+                    
+                test_chunk = current_chunk + "\n" + item if current_chunk else item
+                if self._count_tokens(test_chunk) <= target_tokens:
+                    current_chunk = test_chunk
+                else:
+                    if current_chunk:
+                        chunks.append(current_chunk)
+                    current_chunk = item
+            
+            if current_chunk:
+                chunks.append(current_chunk)
+        else:
+            # Split by sentences
+            sentences = [s.strip() + '.' for s in paragraph.split('.') if s.strip()]
+            current_chunk = ""
+            
+            for sentence in sentences:
+                test_chunk = current_chunk + " " + sentence if current_chunk else sentence
+                if self._count_tokens(test_chunk) <= target_tokens:
+                    current_chunk = test_chunk
+                else:
+                    if current_chunk:
+                        chunks.append(current_chunk)
+                    current_chunk = sentence
+            
+            if current_chunk:
+                chunks.append(current_chunk)
+        
+        return chunks
+    
+    def _merge_small_chunks(self, chunks: List[str]) -> List[str]:
+        """
+        Merge very small chunks with adjacent ones to ensure meaningful content
+        """
+        if not chunks:
+            return chunks
+        
+        merged = []
+        current_chunk = ""
+        
+        for chunk in chunks:
+            chunk_tokens = self._count_tokens(chunk)
+            
+            if chunk_tokens < self.min_chunk_tokens:
+                # Try to merge with current or previous
+                if current_chunk:
+                    test_merge = current_chunk + "\n\n" + chunk
+                    if self._count_tokens(test_merge) <= self.max_tokens:
+                        current_chunk = test_merge
+                        continue
+                    else:
+                        # Save current and start new
+                        merged.append(current_chunk)
+                        current_chunk = chunk
+                else:
+                    current_chunk = chunk
+            else:
+                # Chunk is good size
+                if current_chunk:
+                    merged.append(current_chunk)
+                merged.append(chunk)
+                current_chunk = ""
+        
+        # Add final chunk
+        if current_chunk:
+            merged.append(current_chunk)
+        
+        return merged
     
     def _merge_extracted_agents(self, agent_results: List[Dict]) -> Dict:
         """Merge agent results from multiple document chunks"""
@@ -109,26 +292,46 @@ class PolicyAgentExtractor:
             Dict containing extracted agents organized by type
         """
         
+        logger.info(f"Starting policy agent extraction with domain hint: {domain_hint}")
+        
         # Check if document needs chunking
         doc_tokens = self._count_tokens(policy_document)
-        print(f"Document has {doc_tokens} tokens, max allowed: {self.max_tokens}")
+        logger.info(f"Document has {doc_tokens} tokens, max allowed: {self.max_tokens}")
         
         if doc_tokens > self.max_tokens:
             # Process document in chunks
-            print(f"Document too large ({doc_tokens} tokens), splitting into chunks...")
-            chunks = self._chunk_document(policy_document)
-            print(f"Split into {len(chunks)} chunks")
+            logger.info(f"Document too large ({doc_tokens} tokens), splitting into chunks...")
+            chunks = self._smart_chunk_document(policy_document)
+            logger.info(f"Split into {len(chunks)} chunks")
             
             agent_results = []
             for i, chunk in enumerate(chunks):
-                print(f"Processing chunk {i+1}/{len(chunks)}...")
+                logger.info(f"Processing chunk {i+1}/{len(chunks)}...")
+                
+                # Log chunk content summary
+                chunk_preview = chunk[:200] + "..." if len(chunk) > 200 else chunk
+                logger.info(f"Chunk {i+1} content preview: {chunk_preview}")
+                logger.info(f"Chunk {i+1} length: {len(chunk)} characters, {self._count_tokens(chunk)} tokens")
+                
                 chunk_result = self._extract_from_chunk(chunk, domain_hint, i+1, len(chunks))
                 if chunk_result and 'error' not in chunk_result:
+                    # Log extraction results for this chunk
+                    chunk_agents = {
+                        'threshold': len(chunk_result.get('threshold_agents', [])),
+                        'criteria': len(chunk_result.get('criteria_agents', [])),
+                        'score': len(chunk_result.get('score_agents', [])),
+                        'qualitative': len(chunk_result.get('qualitative_agents', []))
+                    }
+                    total_chunk_agents = sum(chunk_agents.values())
+                    logger.info(f"Chunk {i+1} extracted {total_chunk_agents} agents: {chunk_agents}")
+                    
                     agent_results.append(chunk_result)
                 else:
-                    print(f"Warning: Chunk {i+1} failed to process: {chunk_result.get('error', 'Unknown error')}")
+                    error_msg = chunk_result.get('error', 'Unknown error') if chunk_result else 'No result returned'
+                    logger.error(f"Chunk {i+1} failed to process: {error_msg}")
             
             if not agent_results:
+                logger.error("Failed to extract agents from any document chunks")
                 return {
                     "error": "Failed to extract agents from any document chunks",
                     "chunks_processed": len(chunks),
@@ -136,15 +339,42 @@ class PolicyAgentExtractor:
                 }
             
             # Merge results from all chunks
-            return self._merge_extracted_agents(agent_results)
+            merged_result = self._merge_extracted_agents(agent_results)
+            final_counts = {
+                'threshold': len(merged_result.get('threshold_agents', [])),
+                'criteria': len(merged_result.get('criteria_agents', [])),
+                'score': len(merged_result.get('score_agents', [])),
+                'qualitative': len(merged_result.get('qualitative_agents', []))
+            }
+            total_final_agents = sum(final_counts.values())
+            logger.info(f"Final merged result: {total_final_agents} agents: {final_counts}")
+            
+            return merged_result
         else:
             # Process entire document at once
-            return self._extract_from_chunk(policy_document, domain_hint)
+            logger.info("Processing entire document in single chunk")
+            doc_preview = policy_document[:200] + "..." if len(policy_document) > 200 else policy_document
+            logger.info(f"Document content preview: {doc_preview}")
+            
+            result = self._extract_from_chunk(policy_document, domain_hint)
+            
+            if result and 'error' not in result:
+                final_counts = {
+                    'threshold': len(result.get('threshold_agents', [])),
+                    'criteria': len(result.get('criteria_agents', [])),
+                    'score': len(result.get('score_agents', [])),
+                    'qualitative': len(result.get('qualitative_agents', []))
+                }
+                total_agents = sum(final_counts.values())
+                logger.info(f"Single chunk extracted {total_agents} agents: {final_counts}")
+            
+            return result
     
     def _extract_from_chunk(self, text_chunk: str, domain_hint: Optional[str] = None, chunk_num: int = 1, total_chunks: int = 1) -> Dict:
         """Extract agents from a single text chunk"""
         
         chunk_context = f" (Chunk {chunk_num} of {total_chunks})" if total_chunks > 1 else ""
+        logger.info(f"Extracting agents from chunk {chunk_num}{chunk_context}")
         
         prompt = f"""
         You are a policy analysis expert. Extract key policy requirements from this document{chunk_context} and create compliance agents.
@@ -156,17 +386,36 @@ class PolicyAgentExtractor:
         
         Extract ALL policy requirements and categorize them into these agent types:
         
-        1. **THRESHOLD AGENTS**: Specific numeric limits, ratios, percentages, amounts
-           - Examples: "LTV must be ≤ 80%", "FICO score ≥ 620", "DTI ratio < 43%", "Income verification required"
+        1. **THRESHOLD AGENTS**: Specific numeric limits, ratios, percentages, amounts, approval limits
+           - Examples: "LTV must be ≤ 80%", "FICO score ≥ 620", "DTI ratio < 43%", "Max loan amount $500K"
+           - Look for: dollar amounts, percentages, ratios, minimums, maximums, approval limits, concentration limits
+           - Include: lending limits, exposure limits, collateral requirements, reserve requirements
         
-        2. **CRITERIA AGENTS**: Specific conditions that must be met (yes/no, categorical)
+        2. **CRITERIA AGENTS**: Specific conditions that must be met (yes/no, categorical, documentation)
            - Examples: "Must have 2 years employment history", "Property must be owner-occupied", "No bankruptcies in last 7 years"
+           - Look for: documentation requirements, eligibility criteria, prohibited conditions, required conditions
+           - Include: occupancy requirements, employment criteria, citizenship status, property types
         
-        3. **SCORE AGENTS**: Scoring systems, ratings, calculations, risk assessments
-           - Examples: "Risk score calculation", "Credit grade assignment", "Pricing tier determination"
+        3. **SCORE AGENTS**: Scoring systems, ratings, calculations, risk assessments, pricing
+           - Examples: "Risk score calculation", "Credit grade assignment", "Pricing tier determination", "DTI calculation"
+           - Look for: mathematical calculations, scoring models, risk assessments, pricing matrices
+           - Include: credit scoring, risk rating, pricing adjustments, fee calculations
         
         4. **QUALITATIVE AGENTS**: Subjective assessments requiring human judgment
            - Examples: "Character assessment", "Compensating factors evaluation", "Special circumstances review"
+           - Look for: manual reviews, subjective assessments, exception handling, judgment calls
+           - Include: underwriter discretion, manual overrides, case-by-case reviews
+        
+        COMPREHENSIVE SCANNING INSTRUCTIONS:
+        - Scan for ALL numeric values (dollars, percentages, ratios, counts, time periods)
+        - Look for approval authority limits (who can approve what amounts)
+        - Find concentration limits and portfolio restrictions
+        - Extract documentation and verification requirements
+        - Identify prohibited activities or restricted conditions
+        - Look for exception processes and manual review triggers
+        - Find pricing and fee structures
+        - Extract regulatory compliance requirements
+        - Identify monitoring and reporting requirements
         
         For EACH requirement found, extract with these simple fields:
         - agent_id: unique identifier (format: TH{chunk_num:02d}01, CR{chunk_num:02d}01, SC{chunk_num:02d}01, QL{chunk_num:02d}01)
@@ -198,10 +447,20 @@ class PolicyAgentExtractor:
                 }},
                 {{
                     "agent_id": "TH{chunk_num:02d}02",
-                    "agent_name": "FICO Score Minimum",
-                    "description": "Check minimum credit score requirement",
-                    "requirement": "FICO score must be at least 620",
-                    "data_fields": ["credit_score", "fico_score"],
+                    "agent_name": "Loan Amount Limit",
+                    "description": "Check loan amount against approval limits",
+                    "requirement": "Loan amount must not exceed $500,000 for conventional loans",
+                    "data_fields": ["loan_amount", "loan_type"],
+                    "priority": "critical",
+                    "applicable_products": ["conventional"],
+                    "exceptions": ["Jumbo loans with additional approval"]
+                }},
+                {{
+                    "agent_id": "TH{chunk_num:02d}03",
+                    "agent_name": "Approval Authority Limit",
+                    "description": "Check if loan amount exceeds approval authority",
+                    "requirement": "Loans over $1M require senior management approval",
+                    "data_fields": ["loan_amount", "approver_level"],
                     "priority": "critical",
                     "applicable_products": ["all"],
                     "exceptions": []
@@ -220,13 +479,13 @@ class PolicyAgentExtractor:
                 }},
                 {{
                     "agent_id": "CR{chunk_num:02d}02",
-                    "agent_name": "Property Occupancy",
-                    "description": "Verify property occupancy type",
-                    "requirement": "Property must be owner-occupied for primary residence loans",
-                    "data_fields": ["occupancy_type", "property_use"],
+                    "agent_name": "Income Documentation",
+                    "description": "Verify required income documentation is provided",
+                    "requirement": "Must provide 2 years tax returns and recent pay stubs",
+                    "data_fields": ["tax_returns", "pay_stubs", "income_documentation"],
                     "priority": "high",
-                    "applicable_products": ["primary_residence"],
-                    "exceptions": []
+                    "applicable_products": ["all"],
+                    "exceptions": ["Bank statement programs"]
                 }}
             ],
             "score_agents": [
@@ -236,6 +495,16 @@ class PolicyAgentExtractor:
                     "description": "Calculate debt-to-income ratio",
                     "requirement": "DTI ratio must be calculated and assessed",
                     "data_fields": ["monthly_income", "monthly_debts", "proposed_payment"],
+                    "priority": "critical",
+                    "applicable_products": ["all"],
+                    "exceptions": []
+                }},
+                {{
+                    "agent_id": "SC{chunk_num:02d}02",
+                    "agent_name": "Risk Score Assessment",
+                    "description": "Calculate overall borrower risk score",
+                    "requirement": "Risk score must be calculated using credit, income, and collateral factors",
+                    "data_fields": ["credit_score", "income", "ltv_ratio", "dti_ratio"],
                     "priority": "critical",
                     "applicable_products": ["all"],
                     "exceptions": []
@@ -251,31 +520,75 @@ class PolicyAgentExtractor:
                     "priority": "medium",
                     "applicable_products": ["all"],
                     "exceptions": []
+                }},
+                {{
+                    "agent_id": "QL{chunk_num:02d}02",
+                    "agent_name": "Compensating Factors",
+                    "description": "Evaluate compensating factors for marginal applications",
+                    "requirement": "Consider compensating factors for applications that don't meet standard criteria",
+                    "data_fields": ["assets", "employment_stability", "payment_history"],
+                    "priority": "medium",
+                    "applicable_products": ["all"],
+                    "exceptions": []
                 }}
             ]
         }}
         
-        INSTRUCTIONS:
-        1. Be COMPREHENSIVE - extract EVERY numeric limit, requirement, condition, and policy rule
-        2. Look for: percentages, dollar amounts, time periods, ratios, scores, grades, categories
+        EXTRACTION REQUIREMENTS:
+        1. Be EXTREMELY COMPREHENSIVE - extract EVERY numeric limit, requirement, condition, and policy rule
+        2. Look specifically for: approval limits, dollar amounts, percentages, time periods, ratios, scores, grades
         3. Create separate agents for each distinct requirement - don't combine multiple rules
-        4. Use simple, clear agent names and descriptions
-        5. Extract 10-30 agents typically from a full policy document
+        4. Pay special attention to: lending limits, concentration limits, approval authority, documentation requirements
+        5. Include quantitative thresholds even if they seem minor
+        6. Look for fee structures, pricing rules, and calculation methods
+        7. Extract ALL requirements found - no minimum or maximum limits
         
         Return only valid JSON, no other text.
         """
         
         try:
+            logger.info(f"Sending chunk {chunk_num} to LLM for agent extraction...")
             response = self.agent.process(prompt)
-            return json.loads(response)
+            
+            # Parse the response
+            result = json.loads(response)
+            
+            # Log the extracted agents in detail
+            if 'threshold_agents' in result:
+                logger.info(f"Chunk {chunk_num} - Threshold agents extracted:")
+                for agent in result['threshold_agents']:
+                    logger.info(f"  - {agent.get('agent_name', 'Unknown')}: {agent.get('requirement', 'No requirement')}")
+            
+            if 'criteria_agents' in result:
+                logger.info(f"Chunk {chunk_num} - Criteria agents extracted:")
+                for agent in result['criteria_agents']:
+                    logger.info(f"  - {agent.get('agent_name', 'Unknown')}: {agent.get('requirement', 'No requirement')}")
+            
+            if 'score_agents' in result:
+                logger.info(f"Chunk {chunk_num} - Score agents extracted:")
+                for agent in result['score_agents']:
+                    logger.info(f"  - {agent.get('agent_name', 'Unknown')}: {agent.get('requirement', 'No requirement')}")
+            
+            if 'qualitative_agents' in result:
+                logger.info(f"Chunk {chunk_num} - Qualitative agents extracted:")
+                for agent in result['qualitative_agents']:
+                    logger.info(f"  - {agent.get('agent_name', 'Unknown')}: {agent.get('requirement', 'No requirement')}")
+            
+            return result
+            
         except json.JSONDecodeError as e:
+            error_msg = f"Failed to parse LLM response: {str(e)}"
+            logger.error(f"Chunk {chunk_num} - {error_msg}")
+            logger.error(f"Chunk {chunk_num} - Raw response (first 500 chars): {response[:500] if 'response' in locals() else 'No response'}")
             return {
-                "error": f"Failed to parse LLM response: {str(e)}",
+                "error": error_msg,
                 "raw_response": response[:500] if 'response' in locals() else "No response"
             }
         except Exception as e:
+            error_msg = f"Failed to extract policy agents: {str(e)}"
+            logger.error(f"Chunk {chunk_num} - {error_msg}")
             return {
-                "error": f"Failed to extract policy agents: {str(e)}"
+                "error": error_msg
             }
     
     def refine_agents(self, extracted_agents: Dict, user_feedback: Dict) -> Dict:
