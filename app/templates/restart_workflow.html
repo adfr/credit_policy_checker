@@ -3,25 +3,78 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Policy Compliance Assessment - Restarted Workflow</title>
+    <title>Policy Compliance Assessment - Cloudera</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --cloudera-orange: #F96702;
+            --cloudera-blue: #0E0164;
+        }
+        .text-cloudera-orange {
+            color: #F96702;
+        }
+        .bg-cloudera-orange {
+            background-color: #F96702;
+        }
+        .border-cloudera-orange {
+            border-color: #F96702;
+        }
+        .hover\:bg-cloudera-orange:hover {
+            background-color: #e55a02;
+        }
+        .bg-cloudera-orange-50 {
+            background-color: #fef3ed;
+        }
+        .text-cloudera-orange-800 {
+            color: #b84002;
+        }
+        .bg-cloudera-blue {
+            background-color: #0E0164;
+        }
+        .text-cloudera-blue {
+            color: #0E0164;
+        }
+        .border-cloudera-blue {
+            border-color: #0E0164;
+        }
+        .hover\:bg-cloudera-blue:hover {
+            background-color: #0B0150;
+        }
+        .bg-cloudera-blue-50 {
+            background-color: #f2f0fa;
+        }
+        .text-cloudera-blue-800 {
+            color: #0E0164;
+        }
+        .bg-cloudera-blue-100 {
+            background-color: #e4e0f4;
+        }
+        .border-cloudera-blue-500 {
+            border-color: #0E0164;
+        }
+    </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
     <div class="container mx-auto px-4 py-8">
-        <!-- Header -->
-        <div class="text-center mb-8">
-            <h1 class="text-4xl font-bold text-gray-800 mb-2">Policy Compliance Assessment</h1>
-            <p class="text-lg text-gray-600">Restarted Workflow: Upload Policy → Select Agents → Assess Document → Get Results</p>
+        <!-- Header with Cloudera Logo -->
+        <div class="mb-8">
+            <div class="flex items-center mb-4">
+                <img src="/static/cloudera_logo.png" alt="Cloudera" class="h-24 mr-6">
+                <div class="flex-1">
+                    <h1 class="text-4xl font-bold text-black mb-2">Policy Compliance Assessment</h1>
+                    <p class="text-lg text-cloudera-orange">Upload Policy → Select Agents → Assess Document → Get Results</p>
+                </div>
+            </div>
         </div>
 
         <!-- Progress Steps -->
         <div class="mb-8">
             <div class="flex items-center justify-center space-x-4">
-                <div id="step1" class="flex items-center space-x-2 p-3 rounded-lg bg-blue-100 border-2 border-blue-500">
-                    <i class="fas fa-upload text-blue-600"></i>
-                    <span class="font-medium text-blue-800">1. Upload Policy</span>
+                <div id="step1" class="flex items-center space-x-2 p-3 rounded-lg bg-cloudera-blue-100 border-2 border-cloudera-blue-500">
+                    <i class="fas fa-upload text-cloudera-blue"></i>
+                    <span class="font-medium text-cloudera-blue-800">1. Upload Policy</span>
                 </div>
                 <div class="h-1 w-8 bg-gray-300"></div>
                 <div id="step2" class="flex items-center space-x-2 p-3 rounded-lg bg-gray-100 border-2 border-gray-300">
@@ -46,39 +99,39 @@
             
             <!-- Step 1: Upload Policy Document -->
             <div id="step1-content" class="bg-white rounded-lg shadow-lg p-6 mb-6">
-                <h2 class="text-2xl font-bold mb-4 text-gray-800">
-                    <i class="fas fa-upload text-blue-600 mr-2"></i>
+                <h2 class="text-2xl font-bold mb-4 text-black">
+                    <i class="fas fa-upload text-cloudera-orange mr-2"></i>
                     Step 1: Upload Policy Document
                 </h2>
                 <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                    <label class="block text-sm font-medium text-black mb-2">
                         Select policy document to analyze and create compliance agents
                     </label>
                     <input type="file" id="policyFile" accept=".pdf,.docx,.doc,.txt" 
                            class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
                 </div>
-                <button id="uploadPolicyBtn" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+                <button id="uploadPolicyBtn" class="bg-cloudera-blue text-white px-6 py-2 rounded-lg hover:bg-cloudera-blue transition-colors">
                     <i class="fas fa-upload mr-2"></i>Upload and Analyze Policy
                 </button>
                 
                 <!-- Policy Analysis Results -->
                 <div id="policyResults" class="mt-6 hidden">
-                    <h3 class="text-lg font-semibold text-gray-800 mb-3">Policy Analysis Results</h3>
+                    <h3 class="text-lg font-semibold text-black mb-3">Policy Analysis Results</h3>
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                        <div class="bg-blue-50 p-4 rounded-lg">
-                            <div class="text-2xl font-bold text-blue-800" id="checksExtracted">0</div>
-                            <div class="text-sm text-blue-600">Compliance Checks Found</div>
+                        <div class="bg-cloudera-orange-50 p-4 rounded-lg">
+                            <div class="text-2xl font-bold text-cloudera-orange-800" id="checksExtracted">0</div>
+                            <div class="text-sm text-cloudera-orange">Compliance Checks Found</div>
                         </div>
-                        <div class="bg-green-50 p-4 rounded-lg">
-                            <div class="text-2xl font-bold text-green-800" id="agentsCreated">0</div>
-                            <div class="text-sm text-green-600">Agents Created</div>
+                        <div class="bg-cloudera-blue-50 p-4 rounded-lg">
+                            <div class="text-2xl font-bold text-cloudera-blue-800" id="agentsCreated">0</div>
+                            <div class="text-sm text-cloudera-blue">Agents Created</div>
                         </div>
-                        <div class="bg-purple-50 p-4 rounded-lg">
-                            <div class="text-xl font-bold text-purple-800" id="complexityLevel">-</div>
-                            <div class="text-sm text-purple-600">Policy Complexity</div>
+                        <div class="bg-gray-50 p-4 rounded-lg">
+                            <div class="text-xl font-bold text-black" id="complexityLevel">-</div>
+                            <div class="text-sm text-cloudera-orange">Policy Complexity</div>
                         </div>
                     </div>
-                    <button id="proceedToAgentsBtn" class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition-colors">
+                    <button id="proceedToAgentsBtn" class="bg-cloudera-blue text-white px-6 py-2 rounded-lg hover:bg-cloudera-blue transition-colors">
                         <i class="fas fa-arrow-right mr-2"></i>Proceed to Agent Selection
                     </button>
                 </div>
@@ -86,25 +139,25 @@
 
             <!-- Step 2: Select Agents -->
             <div id="step2-content" class="bg-white rounded-lg shadow-lg p-6 mb-6 hidden">
-                <h2 class="text-2xl font-bold mb-4 text-gray-800">
-                    <i class="fas fa-user-cog text-green-600 mr-2"></i>
+                <h2 class="text-2xl font-bold mb-4 text-black">
+                    <i class="fas fa-user-cog text-cloudera-orange mr-2"></i>
                     Step 2: Select Compliance Agents
                 </h2>
-                <p class="text-gray-600 mb-4">Choose which compliance checks you want to assess against your document.</p>
+                <p class="text-black mb-4">Choose which compliance checks you want to assess against your document.</p>
                 
                 <!-- Agent Selection Controls -->
                 <div class="mb-4 flex space-x-4">
-                    <button id="selectAllBtn" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+                    <button id="selectAllBtn" class="bg-cloudera-blue text-white px-4 py-2 rounded hover:bg-cloudera-blue">
                         Select All
                     </button>
                     <button id="selectNoneBtn" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">
                         Select None
                     </button>
                     <div class="ml-auto">
-                        <span class="text-sm text-gray-600">Selected: </span>
-                        <span id="selectedCount" class="font-semibold text-blue-600">0</span>
-                        <span class="text-sm text-gray-600"> of </span>
-                        <span id="totalCount" class="font-semibold text-blue-600">0</span>
+                        <span class="text-sm text-black">Selected: </span>
+                        <span id="selectedCount" class="font-semibold text-cloudera-orange">0</span>
+                        <span class="text-sm text-black"> of </span>
+                        <span id="totalCount" class="font-semibold text-cloudera-orange">0</span>
                     </div>
                 </div>
 
@@ -113,58 +166,58 @@
                     <!-- Agent items will be populated here -->
                 </div>
 
-                <button id="proceedToDocumentBtn" class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-400" disabled>
+                <button id="proceedToDocumentBtn" class="bg-cloudera-blue text-white px-6 py-2 rounded-lg hover:bg-cloudera-blue transition-colors disabled:bg-gray-400" disabled>
                     <i class="fas fa-arrow-right mr-2"></i>Proceed to Document Upload
                 </button>
             </div>
 
             <!-- Step 3: Upload Assessment Document -->
             <div id="step3-content" class="bg-white rounded-lg shadow-lg p-6 mb-6 hidden">
-                <h2 class="text-2xl font-bold mb-4 text-gray-800">
-                    <i class="fas fa-file-alt text-orange-600 mr-2"></i>
+                <h2 class="text-2xl font-bold mb-4 text-black">
+                    <i class="fas fa-file-alt text-cloudera-orange mr-2"></i>
                     Step 3: Upload Document for Assessment
                 </h2>
-                <p class="text-gray-600 mb-4">Upload the document you want to assess against the selected compliance agents.</p>
+                <p class="text-black mb-4">Upload the document you want to assess against the selected compliance agents.</p>
                 
                 <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                    <label class="block text-sm font-medium text-black mb-2">
                         Select document to assess
                     </label>
                     <input type="file" id="assessmentFile" accept=".pdf,.docx,.doc,.txt" 
-                           class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-orange-50 file:text-orange-700 hover:file:bg-orange-100">
+                           class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-cloudera-orange-50 file:text-cloudera-orange-800 hover:file:bg-orange-100">
                 </div>
                 
-                <button id="proceedToAssessmentBtn" class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition-colors">
+                <button id="proceedToAssessmentBtn" class="bg-cloudera-blue text-white px-6 py-2 rounded-lg hover:bg-cloudera-blue transition-colors">
                     <i class="fas fa-arrow-right mr-2"></i>Proceed to Compliance Assessment
                 </button>
             </div>
 
             <!-- Step 4: Run Assessment -->
             <div id="step4-content" class="bg-white rounded-lg shadow-lg p-6 mb-6 hidden">
-                <h2 class="text-2xl font-bold mb-4 text-gray-800">
-                    <i class="fas fa-check-circle text-green-600 mr-2"></i>
+                <h2 class="text-2xl font-bold mb-4 text-black">
+                    <i class="fas fa-check-circle text-cloudera-orange mr-2"></i>
                     Step 4: Compliance Assessment
                 </h2>
                 
                 <div class="text-center mb-6">
-                    <button id="runAssessmentBtn" class="bg-green-600 text-white px-8 py-3 rounded-lg text-lg font-semibold hover:bg-green-700 transition-colors">
+                    <button id="runAssessmentBtn" class="bg-cloudera-blue text-white px-8 py-3 rounded-lg text-lg font-semibold hover:bg-cloudera-blue transition-colors">
                         <i class="fas fa-play mr-2"></i>Run Compliance Assessment
                     </button>
                 </div>
 
                 <!-- Assessment Progress -->
                 <div id="assessmentProgress" class="hidden mb-6">
-                    <div class="bg-blue-50 p-4 rounded-lg">
+                    <div class="bg-cloudera-blue-50 p-4 rounded-lg">
                         <div class="flex items-center">
-                            <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mr-3"></div>
-                            <span class="text-blue-800 font-medium">Running compliance assessment...</span>
+                            <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-cloudera-blue mr-3"></div>
+                            <span class="text-cloudera-blue-800 font-medium">Running compliance assessment...</span>
                         </div>
                     </div>
                 </div>
 
                 <!-- Assessment Results -->
                 <div id="assessmentResults" class="hidden">
-                    <h3 class="text-xl font-semibold text-gray-800 mb-4">Assessment Results</h3>
+                    <h3 class="text-xl font-semibold text-black mb-4">Assessment Results</h3>
                     
                     <!-- Summary Cards -->
                     <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
@@ -180,15 +233,15 @@
                             <div class="text-2xl font-bold text-yellow-800" id="inconclusiveChecks">0</div>
                             <div class="text-sm text-yellow-600">Inconclusive</div>
                         </div>
-                        <div class="bg-blue-50 p-4 rounded-lg text-center">
-                            <div class="text-2xl font-bold text-blue-800" id="overallScore">0%</div>
-                            <div class="text-sm text-blue-600">Overall Score</div>
+                        <div class="bg-cloudera-blue-50 p-4 rounded-lg text-center">
+                            <div class="text-2xl font-bold text-cloudera-blue-800" id="overallScore">0%</div>
+                            <div class="text-sm text-cloudera-blue">Overall Score</div>
                         </div>
                     </div>
 
                     <!-- Detailed Results -->
                     <div class="mb-6">
-                        <h4 class="text-lg font-semibold text-gray-800 mb-3">Detailed Results</h4>
+                        <h4 class="text-lg font-semibold text-black mb-3">Detailed Results</h4>
                         <div id="detailedResults" class="space-y-4">
                             <!-- Detailed results will be populated here -->
                         </div>
@@ -196,7 +249,7 @@
 
                     <!-- Recommendations -->
                     <div id="recommendationsSection" class="mb-6">
-                        <h4 class="text-lg font-semibold text-gray-800 mb-3">Recommendations</h4>
+                        <h4 class="text-lg font-semibold text-black mb-3">Recommendations</h4>
                         <div id="recommendations" class="space-y-3">
                             <!-- Recommendations will be populated here -->
                         </div>
@@ -204,7 +257,7 @@
 
                     <!-- Actions -->
                     <div class="text-center">
-                        <button id="restartWorkflowBtn" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors mr-4">
+                        <button id="restartWorkflowBtn" class="bg-cloudera-blue text-white px-6 py-2 rounded-lg hover:bg-cloudera-blue transition-colors mr-4">
                             <i class="fas fa-redo mr-2"></i>Start New Assessment
                         </button>
                         <button id="exportResultsBtn" class="bg-gray-600 text-white px-6 py-2 rounded-lg hover:bg-gray-700 transition-colors">
@@ -219,8 +272,8 @@
     <!-- Loading Overlay -->
     <div id="loadingOverlay" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
         <div class="bg-white p-8 rounded-lg text-center">
-            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p class="text-gray-800 font-medium" id="loadingText">Processing...</p>
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-cloudera-blue mx-auto mb-4"></div>
+            <p class="text-black font-medium" id="loadingText">Processing...</p>
         </div>
     </div>
 
