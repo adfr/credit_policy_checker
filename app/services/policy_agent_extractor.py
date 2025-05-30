@@ -157,34 +157,32 @@ class PolicyAgentExtractor:
         Extract ALL policy requirements and categorize them into these agent types:
         
         1. **THRESHOLD AGENTS**: Specific numeric limits, ratios, percentages, amounts
-           - Examples: "LTV must be ≤ 80%", "FICO score ≥ 620", "DTI ratio < 43%"
+           - Examples: "LTV must be ≤ 80%", "FICO score ≥ 620", "DTI ratio < 43%", "Income verification required"
         
         2. **CRITERIA AGENTS**: Specific conditions that must be met (yes/no, categorical)
            - Examples: "Must have 2 years employment history", "Property must be owner-occupied", "No bankruptcies in last 7 years"
         
-        3. **SCORE AGENTS**: Scoring systems, ratings, calculations
+        3. **SCORE AGENTS**: Scoring systems, ratings, calculations, risk assessments
            - Examples: "Risk score calculation", "Credit grade assignment", "Pricing tier determination"
         
         4. **QUALITATIVE AGENTS**: Subjective assessments requiring human judgment
            - Examples: "Character assessment", "Compensating factors evaluation", "Special circumstances review"
         
-        For EACH requirement found, extract:
-        - agent_id: unique identifier (use format TH{chunk_num:02d}01, CR{chunk_num:02d}01, etc. - increment 01,02,03 for each agent)
-        - agent_name: descriptive name
-        - description: what needs to be checked
-        - requirement: exact policy requirement
-        - data_fields: list of data fields needed from applicant
+        For EACH requirement found, extract with these simple fields:
+        - agent_id: unique identifier (format: TH{chunk_num:02d}01, CR{chunk_num:02d}01, SC{chunk_num:02d}01, QL{chunk_num:02d}01)
+        - agent_name: short descriptive name
+        - description: what needs to be checked (1-2 sentences)
+        - requirement: exact policy requirement text
+        - data_fields: list of data fields needed (e.g., ["credit_score", "income", "employment_history"])
         - priority: critical/high/medium/low
-        - applicable_products: which loan products this applies to
-        - exceptions: any noted exceptions or special cases
+        - applicable_products: which products this applies to (e.g., ["all"], ["conventional"], ["FHA"])
+        - exceptions: any noted exceptions (can be empty list)
         
-        Return JSON in this exact format:
+        Return JSON in this simplified format:
         {{
             "policy_metadata": {{
                 "document_title": "extracted title",
                 "domain": "detected domain",
-                "effective_date": "if mentioned",
-                "chunk_info": "chunk {chunk_num} of {total_chunks}",
                 "total_agents": "count of all agents in this chunk"
             }},
             "threshold_agents": [
@@ -193,14 +191,20 @@ class PolicyAgentExtractor:
                     "agent_name": "LTV Ratio Limit",
                     "description": "Verify loan-to-value ratio meets policy limits",
                     "requirement": "LTV must not exceed 80% for conventional loans",
-                    "threshold_value": 80,
-                    "threshold_type": "maximum",
-                    "unit": "percentage",
                     "data_fields": ["loan_amount", "property_value"],
-                    "calculation": "loan_amount / property_value * 100",
                     "priority": "critical",
                     "applicable_products": ["conventional"],
                     "exceptions": ["VA loans may exceed with approval"]
+                }},
+                {{
+                    "agent_id": "TH{chunk_num:02d}02",
+                    "agent_name": "FICO Score Minimum",
+                    "description": "Check minimum credit score requirement",
+                    "requirement": "FICO score must be at least 620",
+                    "data_fields": ["credit_score", "fico_score"],
+                    "priority": "critical",
+                    "applicable_products": ["all"],
+                    "exceptions": []
                 }}
             ],
             "criteria_agents": [
@@ -209,25 +213,29 @@ class PolicyAgentExtractor:
                     "agent_name": "Employment History",
                     "description": "Verify employment history meets minimum requirements",
                     "requirement": "Must have 2+ years continuous employment",
-                    "criteria_type": "duration",
-                    "expected_value": "2+ years",
-                    "data_fields": ["employment_history", "employment_start_date"],
-                    "verification_method": "documentation_review",
+                    "data_fields": ["employment_history", "employment_length"],
                     "priority": "high",
                     "applicable_products": ["all"],
                     "exceptions": ["Recent graduates with job offer"]
+                }},
+                {{
+                    "agent_id": "CR{chunk_num:02d}02",
+                    "agent_name": "Property Occupancy",
+                    "description": "Verify property occupancy type",
+                    "requirement": "Property must be owner-occupied for primary residence loans",
+                    "data_fields": ["occupancy_type", "property_use"],
+                    "priority": "high",
+                    "applicable_products": ["primary_residence"],
+                    "exceptions": []
                 }}
             ],
             "score_agents": [
                 {{
                     "agent_id": "SC{chunk_num:02d}01",
-                    "agent_name": "Credit Risk Score",
-                    "description": "Calculate overall credit risk score",
-                    "requirement": "Risk score must be calculated using specified factors",
-                    "scoring_factors": ["fico_score", "dti_ratio", "ltv_ratio"],
-                    "scoring_weights": {{"fico_score": 0.4, "dti_ratio": 0.3, "ltv_ratio": 0.3}},
-                    "score_range": [0, 1000],
-                    "data_fields": ["fico_score", "dti_ratio", "ltv_ratio"],
+                    "agent_name": "DTI Calculation",
+                    "description": "Calculate debt-to-income ratio",
+                    "requirement": "DTI ratio must be calculated and assessed",
+                    "data_fields": ["monthly_income", "monthly_debts", "proposed_payment"],
                     "priority": "critical",
                     "applicable_products": ["all"],
                     "exceptions": []
@@ -236,12 +244,10 @@ class PolicyAgentExtractor:
             "qualitative_agents": [
                 {{
                     "agent_id": "QL{chunk_num:02d}01",
-                    "agent_name": "Character Assessment",
-                    "description": "Evaluate borrower character and reliability",
-                    "requirement": "Assess borrower character based on payment history and references",
-                    "assessment_criteria": ["payment_history", "references", "explanation_letters"],
-                    "evaluation_guidelines": "Look for patterns of responsibility and reliability",
-                    "data_fields": ["credit_report", "references", "borrower_statements"],
+                    "agent_name": "Credit History Review",
+                    "description": "Review overall credit history and patterns",
+                    "requirement": "Assess borrower creditworthiness and payment patterns",
+                    "data_fields": ["credit_report", "payment_history"],
                     "priority": "medium",
                     "applicable_products": ["all"],
                     "exceptions": []
@@ -249,8 +255,12 @@ class PolicyAgentExtractor:
             ]
         }}
         
-        IMPORTANT: Extract EVERY numeric value, percentage, ratio, and requirement from this text chunk.
-        Each should be a separate agent. Be comprehensive and thorough.
+        INSTRUCTIONS:
+        1. Be COMPREHENSIVE - extract EVERY numeric limit, requirement, condition, and policy rule
+        2. Look for: percentages, dollar amounts, time periods, ratios, scores, grades, categories
+        3. Create separate agents for each distinct requirement - don't combine multiple rules
+        4. Use simple, clear agent names and descriptions
+        5. Extract 10-30 agents typically from a full policy document
         
         Return only valid JSON, no other text.
         """
@@ -382,21 +392,19 @@ class PolicyAgentExtractor:
             for i, agent in enumerate(agents_list):
                 agent_id = agent.get("agent_id", f"{agent_type}_{i}")
                 
-                # Check required fields
+                # Check required fields (simplified structure)
                 required_fields = ["agent_id", "agent_name", "description", "requirement", "data_fields", "priority"]
                 for field in required_fields:
                     if not agent.get(field):
                         validation_results["errors"].append(f"Agent {agent_id} missing required field: {field}")
                         validation_results["is_valid"] = False
                 
-                # Type-specific validations
-                if agent_type == "threshold_agents":
-                    if not agent.get("threshold_value") and not agent.get("calculation"):
-                        validation_results["warnings"].append(f"Threshold agent {agent_id} should have threshold_value or calculation")
+                # Basic validations for data quality
+                if isinstance(agent.get("data_fields"), list) and len(agent.get("data_fields", [])) == 0:
+                    validation_results["warnings"].append(f"Agent {agent_id} has empty data_fields list")
                 
-                elif agent_type == "score_agents":
-                    if not agent.get("scoring_factors"):
-                        validation_results["warnings"].append(f"Score agent {agent_id} should have scoring_factors")
+                if agent.get("priority") not in ["critical", "high", "medium", "low"]:
+                    validation_results["warnings"].append(f"Agent {agent_id} has invalid priority: {agent.get('priority')}")
         
         # Check for duplicate agent IDs
         all_ids = []
@@ -410,10 +418,16 @@ class PolicyAgentExtractor:
         
         # Suggestions for improvement
         total_agents = sum(validation_results["agent_counts"].values())
-        if total_agents < 5:
-            validation_results["suggestions"].append("Consider if more policy requirements could be extracted")
+        if total_agents < 8:
+            validation_results["suggestions"].append("Low agent count - consider extracting more policy requirements")
         
         if validation_results["agent_counts"]["threshold"] == 0:
-            validation_results["suggestions"].append("No threshold agents found - check for numeric limits in the policy")
+            validation_results["suggestions"].append("No threshold agents found - check for numeric limits, percentages, or ratios")
+        
+        if validation_results["agent_counts"]["criteria"] == 0:
+            validation_results["suggestions"].append("No criteria agents found - check for yes/no conditions or categorical requirements")
+        
+        if total_agents > 50:
+            validation_results["suggestions"].append("High agent count - consider consolidating similar requirements")
         
         return validation_results 
