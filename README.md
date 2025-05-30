@@ -2,6 +2,12 @@
 
 A sophisticated AI-powered system for analyzing policy documents and checking compliance against them using intelligent document processing and specialized compliance agents.
 
+## Demo
+
+![Policy Compliance Checker Demo](demogif.gif)
+
+*Watch the complete workflow: Upload policy → Extract agents → Select checks → Upload document → Get compliance results*
+
 ## Features
 
 ### 🔄 **Restart Workflow System**
