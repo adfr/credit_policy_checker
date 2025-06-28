@@ -1,5 +1,7 @@
 from agents.universal_agent import UniversalAgent
-from typing import Dict
+from agents.hybrid_credit_agent import HybridCreditAgent
+from typing import Dict, Optional
+import os
 
 class AgentFactory:
     """Factory to create agents for any type of policy checking"""
@@ -7,9 +9,17 @@ class AgentFactory:
     def __init__(self):
         # Keep track of agent instances for reuse if needed
         self.agent_cache = {}
+        # Check if graph database is available
+        self.graph_available = self._check_graph_availability()
     
-    def create_agent(self, check_type: str, check_definition: Dict = None):
-        """Create a universal agent that can handle any type of check"""
+    def create_agent(self, check_type: str, check_definition: Dict = None, use_graph: bool = None):
+        """Create an agent that can handle any type of check
+        
+        Args:
+            check_type: Type of check to perform
+            check_definition: Detailed check definition
+            use_graph: Force use of graph-based agent (None=auto-detect)
+        """
         if not check_definition:
             check_definition = {'check_type': check_type}
         
@@ -23,8 +33,15 @@ class AgentFactory:
             'complexity': complexity
         })
         
-        # Create universal agent
-        return UniversalAgent(check_definition)
+        # Decide whether to use hybrid agent or pure LLM agent
+        should_use_graph = use_graph if use_graph is not None else self._should_use_graph(check_definition)
+        
+        if should_use_graph and self.graph_available:
+            # Use hybrid agent for credit/financial checks when graph is available
+            return HybridCreditAgent()
+        else:
+            # Use universal LLM agent
+            return UniversalAgent(check_definition)
     
     def _determine_domain(self, check_definition: Dict) -> str:
         """Determine the domain/expertise area for the check"""
@@ -111,3 +128,40 @@ class AgentFactory:
             'supply_chain': 'Supply chain analysis, vendor assessment, procurement',
             'general': 'General purpose analysis for any domain'
         }
+    
+    def _check_graph_availability(self) -> bool:
+        """Check if Neo4j graph database is available"""
+        try:
+            from neo4j import GraphDatabase
+            from dotenv import load_dotenv
+            
+            load_dotenv('graph-db/.env')
+            uri = os.getenv('NEO4J_URI', 'bolt://localhost:7687')
+            user = os.getenv('NEO4J_USER', 'neo4j')
+            password = os.getenv('NEO4J_PASSWORD', 'neo4j123!')
+            
+            driver = GraphDatabase.driver(uri, auth=(user, password))
+            driver.verify_connectivity()
+            driver.close()
+            return True
+        except:
+            return False
+    
+    def _should_use_graph(self, check_definition: Dict) -> bool:
+        """Determine if graph-based agent should be used"""
+        check_type = check_definition.get('check_type', '').lower()
+        domain = check_definition.get('domain', '').lower()
+        
+        # Use graph for credit, loan, and financial compliance checks
+        graph_domains = ['financial', 'credit', 'loan', 'regulatory']
+        graph_keywords = ['credit', 'loan', 'compliance', 'requirement', 'policy', 'regulation']
+        
+        # Check if domain suggests graph usage
+        if any(d in domain for d in graph_domains):
+            return True
+        
+        # Check if check type contains graph-related keywords
+        if any(keyword in check_type for keyword in graph_keywords):
+            return True
+        
+        return False

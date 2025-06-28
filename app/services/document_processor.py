@@ -3,6 +3,17 @@ from app.parsers.document_parser import DocumentParser
 from app.services.policy_agent_extractor import PolicyAgentExtractor
 from app.services.agent_compliance_checker import AgentComplianceChecker
 import json
+import os
+import sys
+
+# Add the project root to the Python path
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, project_root)
+
+try:
+    from graph_db.document_to_graph import DocumentToGraph
+except ImportError:
+    DocumentToGraph = None
 
 class DocumentProcessor:
     """Processes documents using agent-based policy extraction and compliance checking"""
@@ -11,6 +22,8 @@ class DocumentProcessor:
         self.parser = DocumentParser()
         self.agent_extractor = PolicyAgentExtractor()
         self.compliance_checker = AgentComplianceChecker()
+        self.graph_builder = None
+        self._init_graph_builder()
     
     def extract_policy_agents(self, file_path: str, domain_hint: str = None) -> Dict:
         """Extract policy agents from a policy document"""
@@ -148,3 +161,47 @@ class DocumentProcessor:
         validation['is_complete'] = validation['confidence_score'] >= 0.6
         
         return validation
+    
+    def _init_graph_builder(self):
+        """Initialize graph builder if Neo4j is available"""
+        try:
+            if DocumentToGraph:
+                self.graph_builder = DocumentToGraph()
+            else:
+                self.graph_builder = None
+        except Exception as e:
+            print(f"Graph builder not available: {e}")
+            self.graph_builder = None
+    
+    def process_with_graph(self, file_path: str, domain_hint: str = None) -> Dict:
+        """Process document with both LLM and graph-based approaches"""
+        # First, do standard processing
+        result = self.extract_policy_agents(file_path, domain_hint)
+        
+        if 'error' in result:
+            return result
+        
+        # If graph builder is available, also build graph
+        if self.graph_builder:
+            try:
+                # Get text content
+                text_content = result.get('text_content_length', 0)
+                parsed_doc = self.parser.parse_document(file_path)
+                text = parsed_doc.get('text_content', '')
+                
+                # Build graph
+                graph_result = self.graph_builder.process_document(
+                    text, 
+                    os.path.basename(file_path)
+                )
+                
+                result['graph_creation'] = graph_result
+                result['methodology'] = 'hybrid_llm_graph'
+                
+            except Exception as e:
+                result['graph_error'] = str(e)
+                result['methodology'] = 'llm_only'
+        else:
+            result['methodology'] = 'llm_only'
+        
+        return result

@@ -1,0 +1,13 @@
+[project]
+name = "credit-policy-graph"
+version = "0.1.0"
+description = "Extract credit policy information into Neo4j graph database"
+requires-python = ">=3.9"
+dependencies = [
+    "docling>=2.0.0",
+    "neo4j>=5.14.0",
+    "python-dotenv>=1.0.0",
+]
+
+[tool.uv]
+dev-dependencies = []
