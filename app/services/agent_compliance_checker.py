@@ -1,5 +1,6 @@
 from typing import Dict, List, Optional
-from agents.policy_agents import AgentFactory, ThresholdAgent, CriteriaAgent, ScoreAgent, QualitativeAgent
+from agents.policy_agents import ThresholdAgent, CriteriaAgent, ScoreAgent, QualitativeAgent
+from agents.agent_factory import AgentFactory
 from agents.base_agent import GeneralAgent
 import json
 import concurrent.futures
@@ -9,6 +10,7 @@ class AgentComplianceChecker:
     
     def __init__(self):
         self.document_analyzer = GeneralAgent("document_analyzer")
+        self.agent_factory = AgentFactory()
         
     def check_compliance(self, document_content: str, selected_agents: List[Dict], applicant_data: Optional[Dict] = None) -> Dict:
         """
@@ -207,8 +209,37 @@ class AgentComplianceChecker:
         
         return combined_data
     
+    def _remove_duplicate_agents(self, selected_agents: List[Dict]) -> List[Dict]:
+        """Remove duplicate agents based on agent_id and requirements"""
+        seen_agents = {}
+        unique_agents = []
+        duplicates_removed = 0
+        
+        for agent in selected_agents:
+            agent_id = agent.get('agent_id')
+            requirement = agent.get('requirement', '')
+            
+            # Create a composite key for detecting duplicates
+            composite_key = f"{agent_id}_{hash(requirement)}"
+            
+            if composite_key not in seen_agents:
+                seen_agents[composite_key] = agent
+                unique_agents.append(agent)
+            else:
+                duplicates_removed += 1
+                # Log duplicate found (could be enhanced with actual logging)
+                print(f"Duplicate agent detected and removed: {agent_id}")
+        
+        if duplicates_removed > 0:
+            print(f"Removed {duplicates_removed} duplicate agents. {len(unique_agents)} unique agents remaining.")
+        
+        return unique_agents
+    
     def _run_agent_checks(self, selected_agents: List[Dict], combined_data: Dict) -> List[Dict]:
         """Run compliance checks using selected agents in parallel"""
+        
+        # First, remove duplicate agents
+        unique_agents = self._remove_duplicate_agents(selected_agents)
         
         results = []
         
@@ -216,17 +247,20 @@ class AgentComplianceChecker:
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
             future_to_agent = {}
             
-            for agent_config in selected_agents:
+            for agent_config in unique_agents:
                 # Create agent instance
-                agent = AgentFactory.create_agent(agent_config)
+                agent = self.agent_factory.create_agent(
+                    agent_config.get('check_type', 'general'),
+                    agent_config
+                )
                 
                 # Submit check to executor
                 future = executor.submit(agent.check, {}, combined_data)
-                future_to_agent[future] = agent_config
+                future_to_agent[future] = (agent_config, agent)
             
             # Collect results
             for future in concurrent.futures.as_completed(future_to_agent):
-                agent_config = future_to_agent[future]
+                agent_config, agent_instance = future_to_agent[future]
                 try:
                     result = future.result()
                     
@@ -235,7 +269,9 @@ class AgentComplianceChecker:
                         'agent_id': agent_config.get('agent_id'),
                         'agent_name': agent_config.get('agent_name'),
                         'priority': agent_config.get('priority'),
-                        'applicable_products': agent_config.get('applicable_products', [])
+                        'applicable_products': agent_config.get('applicable_products', []),
+                        'agent_origin': getattr(agent_instance, '_origin', 'unknown'),
+                        'agent_origin_reason': getattr(agent_instance, '_origin_reason', 'No reason provided')
                     }
                     
                     results.append(result)
@@ -252,7 +288,9 @@ class AgentComplianceChecker:
                         'agent_config': {
                             'agent_id': agent_config.get('agent_id'),
                             'agent_name': agent_config.get('agent_name'),
-                            'priority': agent_config.get('priority')
+                            'priority': agent_config.get('priority'),
+                            'agent_origin': getattr(agent_instance, '_origin', 'unknown'),
+                            'agent_origin_reason': getattr(agent_instance, '_origin_reason', 'Error during execution')
                         }
                     }
                     results.append(error_result)

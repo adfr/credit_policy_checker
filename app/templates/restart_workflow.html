@@ -229,14 +229,20 @@
                             <div class="text-2xl font-bold text-red-800" id="failedChecks">0</div>
                             <div class="text-sm text-red-600">Failed</div>
                         </div>
-                        <div class="bg-yellow-50 p-4 rounded-lg text-center">
-                            <div class="text-2xl font-bold text-yellow-800" id="inconclusiveChecks">0</div>
-                            <div class="text-sm text-yellow-600">Inconclusive</div>
+                        <div class="bg-blue-50 p-4 rounded-lg text-center">
+                            <div class="text-2xl font-bold text-blue-800" id="graphAgents">0</div>
+                            <div class="text-sm text-blue-600"><i class="fas fa-project-diagram mr-1"></i>Graph DB</div>
                         </div>
-                        <div class="bg-cloudera-blue-50 p-4 rounded-lg text-center">
-                            <div class="text-2xl font-bold text-cloudera-blue-800" id="overallScore">0%</div>
-                            <div class="text-sm text-cloudera-blue">Overall Score</div>
+                        <div class="bg-purple-50 p-4 rounded-lg text-center">
+                            <div class="text-2xl font-bold text-purple-800" id="llmAgents">0</div>
+                            <div class="text-sm text-purple-600"><i class="fas fa-brain mr-1"></i>LLM Only</div>
                         </div>
+                    </div>
+                    
+                    <!-- Overall Score Card -->
+                    <div class="bg-cloudera-blue-50 p-4 rounded-lg text-center mb-6">
+                        <div class="text-3xl font-bold text-cloudera-blue-800" id="overallScore">0%</div>
+                        <div class="text-sm text-cloudera-blue">Overall Compliance Score</div>
                     </div>
 
                     <!-- Detailed Results -->
@@ -493,10 +499,24 @@
             const agentResults = complianceResults.agent_results;
             const summary = complianceResults.compliance_summary;
             
+            // Count agents by origin
+            let graphAgentCount = 0;
+            let llmAgentCount = 0;
+            
+            agentResults.forEach(agentResult => {
+                const origin = agentResult.agent_config.agent_origin;
+                if (origin === 'graph_database') {
+                    graphAgentCount++;
+                } else {
+                    llmAgentCount++;
+                }
+            });
+            
             // Update summary cards
             document.getElementById('passedChecks').textContent = summary.statistics.passed_agents;
             document.getElementById('failedChecks').textContent = summary.statistics.failed_agents;
-            document.getElementById('inconclusiveChecks').textContent = 0; // Not in new structure
+            document.getElementById('graphAgents').textContent = graphAgentCount;
+            document.getElementById('llmAgents').textContent = llmAgentCount;
             document.getElementById('overallScore').textContent = Math.round(summary.statistics.pass_rate * 100) + '%';
 
             // Display detailed results
@@ -507,10 +527,21 @@
                 const resultDiv = document.createElement('div');
                 resultDiv.className = 'border rounded-lg p-4 ' + getResultColorClass(result.passed);
                 
+                // Get agent origin information
+                const agentOrigin = result.agent_config.agent_origin || 'unknown';
+                const originIcon = agentOrigin === 'graph_database' ? 'fas fa-project-diagram' : 'fas fa-brain';
+                const originColor = agentOrigin === 'graph_database' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800';
+                const originText = agentOrigin === 'graph_database' ? 'Graph DB' : 'LLM Only';
+                
                 resultDiv.innerHTML = `
                     <div class="flex items-start justify-between">
                         <div class="flex-1">
-                            <h5 class="font-semibold text-gray-800">${result.agent_config.agent_name}</h5>
+                            <div class="flex items-center gap-2 mb-1">
+                                <h5 class="font-semibold text-gray-800">${result.agent_config.agent_name}</h5>
+                                <span class="px-2 py-1 ${originColor} text-xs rounded-full" title="${result.agent_config.agent_origin_reason || 'No reason provided'}">
+                                    <i class="${originIcon} mr-1"></i>${originText}
+                                </span>
+                            </div>
                             <p class="text-sm text-gray-600 mb-2">Priority: ${result.agent_config.priority}</p>
                             <p class="text-sm">${result.reason}</p>
                         </div>
@@ -666,6 +697,11 @@
                     'qualitative': 'bg-indigo-100 text-indigo-800'
                 }[agent.agent_type] || 'bg-gray-100 text-gray-800';
                 
+                // Add origin badge placeholder (will be updated during assessment)
+                const originBadge = `<span class="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-full" title="Origin will be determined during assessment">
+                    <i class="fas fa-question-circle mr-1"></i>Determined at runtime
+                </span>`;
+                
                 agentDiv.innerHTML = `
                     <div class="flex items-start">
                         <input type="checkbox" name="agentCheck" value="${agent.agent_id}" 
@@ -680,6 +716,7 @@
                                     <span class="px-2 py-1 ${priorityColor} text-xs rounded-full">
                                         ${agent.priority}
                                     </span>
+                                    ${originBadge}
                                 </div>
                             </div>
                             <p class="text-sm text-gray-600 mb-2">${agent.description}</p>

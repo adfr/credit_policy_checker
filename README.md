@@ -129,6 +129,149 @@ Assessment Document → EnhancedProcessor → Structured Data → ComplianceChec
                                           Selected Agents → Assessment Results
 ```
 
+## Technical Implementation: Agent Generation
+
+### 1. Agent Architecture
+
+The system uses a sophisticated agent-based architecture for policy compliance checking:
+
+#### Base Agent Framework
+- **BaseAgent** (abstract class): Foundation for all compliance agents
+  - Integrates OpenAI API for LLM-powered reasoning
+  - Defines standard interface with abstract `check()` method
+  - Handles error responses and JSON formatting
+  - Provides consistent structure for all agent types
+
+#### Agent Factory Pattern
+- **AgentFactory**: Intelligent agent creation based on policy requirements
+  - **Domain Detection**: Automatically identifies domain (financial, ESG, regulatory, etc.) from 11 supported categories
+  - **Complexity Assessment**: Determines analysis complexity (simple, quantitative, comparative, multi-step)
+  - **Agent Selection**: Chooses between specialized agents, universal agents, or hybrid graph+LLM agents
+  - **Keyword-Based Routing**: Uses domain-specific keywords for accurate agent assignment
+
+### 2. Agent Types
+
+#### Domain-Specific Policy Agents
+1. **ThresholdAgent**: Numeric limit verification
+   - Handles ratios, percentages, and numeric thresholds (e.g., LTV ≤ 80%, FICO ≥ 620)
+   - Supports minimum, maximum, exact, and range comparisons
+   - Performs calculations with unit conversions
+
+2. **CriteriaAgent**: Categorical requirement checking
+   - Verifies yes/no conditions (e.g., 2 years employment history)
+   - Validates documentation requirements
+   - Handles exceptions and alternative evidence
+
+3. **ScoreAgent**: Scoring model implementation
+   - Calculates weighted scores based on multiple factors
+   - Normalizes values across different scales
+   - Provides detailed score breakdowns
+
+4. **QualitativeAgent**: Subjective assessment handling
+   - Performs judgment-based evaluations
+   - Considers compensating factors
+   - Flags items for human review
+
+#### Universal Agent
+- Adapts to any policy type across all domains
+- Self-determines analysis approach based on requirement complexity
+- Generates analysis steps dynamically for complex multi-step checks
+
+#### Hybrid Agents
+- Combines Neo4j graph database with LLM reasoning
+- Retrieves structured requirements from knowledge graph
+- Uses graph for authoritative rules, LLM for edge cases and interpretation
+- Particularly effective for credit and financial domains
+
+### 3. Agent Generation Process
+
+#### Step 1: Policy Document Analysis
+```python
+# PolicyAgentExtractor extracts agents from policy documents
+1. Smart Document Chunking:
+   - Token-aware splitting (target: 400 tokens per chunk)
+   - Preserves logical boundaries and context
+   - Handles multi-section policy documents
+
+2. LLM-Powered Extraction:
+   - Analyzes each chunk to identify compliance requirements
+   - Categorizes into appropriate agent types
+   - Extracts structured metadata for each agent
+```
+
+#### Step 2: Agent Configuration
+Each generated agent includes:
+```json
+{
+    "agent_id": "unique_identifier",
+    "agent_name": "descriptive_name",
+    "description": "what needs to be checked",
+    "requirement": "exact policy requirement text",
+    "data_fields": ["required", "data", "fields"],
+    "priority": "critical/high/medium/low",
+    "applicable_products": ["relevant products"],
+    "exceptions": ["documented exceptions"]
+}
+```
+
+Additional type-specific fields:
+- **Threshold**: `threshold_value`, `threshold_type`, `unit`, `calculation`
+- **Criteria**: `criteria_type`, `expected_value`, `verification_method`
+- **Score**: `scoring_factors`, `scoring_weights`, `score_range`
+- **Qualitative**: `assessment_criteria`, `evaluation_guidelines`
+
+#### Step 3: Agent Instantiation
+```python
+# AgentFactory creates appropriate agent instances
+agent = AgentFactory.create_agent(
+    agent_config=extracted_config,
+    domain=detected_domain,
+    complexity=assessed_complexity
+)
+```
+
+### 4. Compliance Checking Workflow
+
+1. **Parallel Processing**: Agents run concurrently using ThreadPoolExecutor
+2. **Data Extraction**: Each agent extracts required fields from documents
+3. **Analysis Execution**: Agents perform their specific checks
+4. **Result Aggregation**: Individual results combined into comprehensive assessment
+5. **Decision Generation**: Overall compliance determination with reasoning
+
+### 5. Key Design Patterns
+
+- **Factory Pattern**: Centralized agent creation logic
+- **Template Method**: Base class defines structure, subclasses implement specifics
+- **Strategy Pattern**: Different analysis strategies based on complexity
+- **Adapter Pattern**: Hybrid agents bridge graph database and LLM capabilities
+- **Observer Pattern**: Progress tracking and result notification
+
+### 6. Extensibility
+
+The system is designed for easy extension:
+
+```python
+# Add new agent type
+class CustomAgent(BaseAgent):
+    def check(self, data, requirement):
+        # Implement custom checking logic
+        pass
+
+# Register with factory
+AgentFactory.register_agent_type('custom', CustomAgent)
+
+# Add new domain
+DOMAIN_KEYWORDS['new_domain'] = ['keyword1', 'keyword2']
+```
+
+### 7. Performance Optimizations
+
+- **Concurrent Processing**: Multiple agents run in parallel
+- **Smart Chunking**: Optimal document splitting for LLM processing
+- **Caching**: Results cached for repeated checks
+- **Batch Processing**: Multiple documents processed efficiently
+- **Resource Management**: Automatic scaling based on workload
+
 ## Example Use Cases
 
 ### 1. Credit Policy Compliance

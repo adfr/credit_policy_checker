@@ -38,10 +38,16 @@ class AgentFactory:
         
         if should_use_graph and self.graph_available:
             # Use hybrid agent for credit/financial checks when graph is available
-            return HybridCreditAgent()
+            agent = HybridCreditAgent()
+            agent._origin = 'graph_database'
+            agent._origin_reason = f'Domain: {domain}, Graph available for financial/credit checks'
+            return agent
         else:
             # Use universal LLM agent
-            return UniversalAgent(check_definition)
+            agent = UniversalAgent(check_definition)
+            agent._origin = 'llm_only'
+            agent._origin_reason = f'Domain: {domain}, {"Graph unavailable" if should_use_graph else "Non-graph domain"}'
+            return agent
     
     def _determine_domain(self, check_definition: Dict) -> str:
         """Determine the domain/expertise area for the check"""
