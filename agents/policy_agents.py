@@ -30,6 +30,9 @@ class ThresholdAgent(BaseAgent):
         
         INSTRUCTIONS:
         1. Extract the required data fields from applicant data
+           IMPORTANT: The data fields in the document may NOT have the exact same names as requested.
+           Look for semantically similar fields (e.g., 'home_equity_loan_amount' might appear as 'home equity', 'HELOC amount', 'second mortgage', etc.)
+           Use your understanding of financial terminology to identify equivalent fields.
         2. Perform the calculation if specified, otherwise use direct values
         3. Compare against the threshold based on threshold_type:
            - minimum: value must be >= threshold
@@ -111,6 +114,9 @@ class CriteriaAgent(BaseAgent):
         
         INSTRUCTIONS:
         1. Look for the required data fields in applicant data
+           IMPORTANT: The data fields in the document may NOT have the exact same names as requested.
+           Look for semantically similar fields (e.g., 'employment_history' might appear as 'work history', 'job tenure', 'years employed', etc.)
+           Use your understanding of terminology to identify equivalent fields.
         2. Evaluate if the criteria is met based on criteria_type:
            - boolean: true/false check
            - duration: time period requirements
@@ -193,6 +199,9 @@ class ScoreAgent(BaseAgent):
         
         INSTRUCTIONS:
         1. Extract values for each scoring factor from applicant data
+           IMPORTANT: The data fields in the document may NOT have the exact same names as requested.
+           Look for semantically similar fields (e.g., 'credit_score' might appear as 'FICO score', 'credit rating', 'creditworthiness score', etc.)
+           Use your understanding of terminology to identify equivalent fields.
         2. Normalize values to appropriate scales if needed
         3. Apply weights to each factor
         4. Calculate overall score using the scoring model
@@ -273,6 +282,9 @@ class QualitativeAgent(BaseAgent):
         
         INSTRUCTIONS:
         1. Review all relevant data about the applicant
+           IMPORTANT: The data fields in the document may NOT have the exact same names as requested.
+           Look for semantically similar fields and use your understanding to identify relevant information
+           even when field names don't match exactly.
         2. Apply the assessment criteria systematically
         3. Use the evaluation guidelines to make judgment
         4. Look for patterns, red flags, and positive indicators
