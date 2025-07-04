@@ -26,59 +26,148 @@ class UniversalAgent(BaseAgent):
     
     def _simple_analysis(self, policy_check: Dict, data: Dict) -> Dict:
         """Simple single-step analysis"""
-        prompt = f"""
-        You are an expert analyst specializing in: {self.domain}
         
-        Task: {policy_check.get('description')}
-        Check Type: {policy_check.get('check_type')}
-        Domain: {self.domain}
+        # Get agent configuration from check definition
+        agent_config = self.check_definition
+        agent_name = agent_config.get('agent_name', 'Policy Check')
+        requirement = agent_config.get('requirement', policy_check.get('criteria', ''))
+        data_fields = agent_config.get('data_fields', [])
         
-        Requirements/Criteria:
-        {policy_check.get('criteria')}
+        # Check if this is a threshold agent (like LTV) that needs focused checking
+        is_threshold_agent = 'threshold' in agent_config.get('agent_id', '').lower() or 'TH' in agent_config.get('agent_id', '')
         
-        Data to Analyze:
-        {json.dumps(data, indent=2)}
-        
-        Additional Instructions:
-        {policy_check.get('agent_instructions', 'Perform standard compliance check')}
-        
-        Analyze the data against the requirements and return a JSON response:
-        {{
-            "passed": true/false,
-            "findings": ["list of key findings"],
-            "confidence": 0.0-1.0,
-            "reason": "clear explanation of the decision"
-        }}
-        
-        Return only the JSON, no other text.
-        """
+        if is_threshold_agent:
+            prompt = f"""
+            You are a focused compliance checker for: {agent_name}
+            
+            SCOPE: You ONLY check this specific requirement. Do NOT provide general assessments.
+            
+            Requirement to Check:
+            {requirement}
+            
+            Required Data Fields: {', '.join(data_fields)}
+            
+            Available Data:
+            {json.dumps(data, indent=2)}
+            
+            INSTRUCTIONS:
+            1. ONLY verify compliance with the stated requirement
+            2. Calculate any needed values from the provided data
+            3. Compare against the specific limits/thresholds
+            4. Do NOT comment on other aspects of creditworthiness
+            5. Focus solely on this single check
+            
+            Return JSON:
+            {{
+                "passed": true/false,
+                "calculation": "show specific calculation if applicable",
+                "threshold_checked": "the specific limit being checked",
+                "actual_value": "the calculated/found value",
+                "confidence": 0.0-1.0,
+                "reason": "focused explanation ONLY about this specific requirement"
+            }}
+            
+            Return only JSON, no other text.
+            """
+        else:
+            prompt = f"""
+            You are an expert analyst specializing in: {self.domain}
+            
+            Task: {policy_check.get('description')}
+            Check Type: {policy_check.get('check_type')}
+            Domain: {self.domain}
+            
+            Requirements/Criteria:
+            {policy_check.get('criteria')}
+            
+            Data to Analyze:
+            {json.dumps(data, indent=2)}
+            
+            Additional Instructions:
+            {policy_check.get('agent_instructions', 'Perform standard compliance check')}
+            
+            Analyze the data against the requirements and return a JSON response:
+            {{
+                "passed": true/false,
+                "findings": ["list of key findings"],
+                "confidence": 0.0-1.0,
+                "reason": "clear explanation of the decision"
+            }}
+            
+            Return only the JSON, no other text.
+            """
         
         return self._execute_analysis(prompt, policy_check)
     
     def _quantitative_analysis(self, policy_check: Dict, data: Dict) -> Dict:
         """Quantitative analysis with calculations"""
-        prompt = f"""
-        You are a quantitative analyst specializing in: {self.domain}
         
-        Task: {policy_check.get('description')}
-        Perform quantitative analysis including calculations, ratios, and statistical measures.
+        # Get agent configuration from check definition
+        agent_config = self.check_definition
+        agent_name = agent_config.get('agent_name', 'Quantitative Check')
+        requirement = agent_config.get('requirement', policy_check.get('criteria', ''))
+        data_fields = agent_config.get('data_fields', [])
         
-        Requirements:
-        {policy_check.get('criteria')}
+        # Check if this is a threshold agent that needs focused checking
+        is_threshold_agent = 'threshold' in agent_config.get('agent_id', '').lower() or 'TH' in agent_config.get('agent_id', '')
         
-        Data:
-        {json.dumps(data, indent=2)}
-        
-        Calculate relevant metrics and provide detailed quantitative assessment.
-        
-        Return JSON:
-        {{
-            "passed": true/false,
-            "calculations": {{"metric_name": {{"value": number, "formula": "description"}}}},
-            "confidence": 0.0-1.0,
-            "reason": "detailed quantitative explanation"
-        }}
-        """
+        if is_threshold_agent:
+            prompt = f"""
+            You are a focused quantitative compliance checker for: {agent_name}
+            
+            SCOPE: You ONLY check this specific requirement. Do NOT provide general assessments.
+            
+            Requirement to Check:
+            {requirement}
+            
+            Required Data Fields: {', '.join(data_fields)}
+            
+            Available Data:
+            {json.dumps(data, indent=2)}
+            
+            INSTRUCTIONS:
+            1. ONLY calculate and verify compliance with the stated requirement
+            2. Show the specific calculation performed
+            3. Compare the calculated value against the specific threshold/limit
+            4. Do NOT comment on other aspects of creditworthiness
+            5. Focus solely on this single quantitative check
+            
+            Return JSON:
+            {{
+                "passed": true/false,
+                "calculation": "detailed calculation with formula and steps",
+                "calculated_value": "the numerical result",
+                "threshold_limit": "the specific limit being checked against",
+                "threshold_checked": "description of what threshold was verified",
+                "confidence": 0.0-1.0,
+                "reason": "focused explanation ONLY about this specific calculation and threshold"
+            }}
+            
+            Return only JSON, no other text.
+            """
+        else:
+            prompt = f"""
+            You are a quantitative analyst specializing in: {self.domain}
+            
+            Task: {policy_check.get('description')}
+            Perform quantitative analysis including calculations, ratios, and statistical measures.
+            
+            Requirements:
+            {policy_check.get('criteria')}
+            
+            Data:
+            {json.dumps(data, indent=2)}
+            
+            Calculate relevant metrics and provide detailed quantitative assessment.
+            
+            Return JSON:
+            {{
+                "passed": true/false,
+                "calculations": {{"metric_name": {{"value": number, "formula": "description"}}}},
+                "confidence": 0.0-1.0,
+                "reason": "detailed quantitative explanation"
+            }}
+            """
         
         return self._execute_analysis(prompt, policy_check)
     

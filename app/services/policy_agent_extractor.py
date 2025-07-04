@@ -1,5 +1,6 @@
 from typing import Dict, List, Optional
 from agents.base_agent import GeneralAgent
+from .agent_storage_service import AgentStorageService
 import json
 import tiktoken
 import logging
@@ -29,6 +30,7 @@ class PolicyAgentExtractor:
         self.max_tokens = 500  # Reduced for smaller, more focused chunks
         self.min_chunk_tokens = 200  # Minimum meaningful chunk size
         self.encoding = tiktoken.encoding_for_model("gpt-4")
+        self.storage_service = AgentStorageService()
     
     def _count_tokens(self, text: str) -> int:
         """Count tokens in text"""
@@ -743,4 +745,88 @@ class PolicyAgentExtractor:
         if total_agents > 50:
             validation_results["suggestions"].append("High agent count - consider consolidating similar requirements")
         
-        return validation_results 
+        return validation_results
+    
+    def save_extracted_agents(self, policy_name: str, agents: Dict, metadata: Optional[Dict] = None) -> Dict:
+        """
+        Save extracted agents to JSON file storage
+        
+        Args:
+            policy_name: Name of the policy document
+            agents: Dictionary containing extracted agents
+            metadata: Optional metadata about the policy
+            
+        Returns:
+            Dictionary with save results
+        """
+        try:
+            # Prepare metadata with additional info
+            save_metadata = {
+                "extraction_method": "LLM-based policy agent extraction",
+                "extractor_version": "1.0",
+                "total_agents": sum(len(agents.get(agent_type, [])) for agent_type in ["threshold_agents", "criteria_agents", "score_agents", "qualitative_agents"])
+            }
+            
+            # Merge with provided metadata
+            if metadata:
+                save_metadata.update(metadata)
+            
+            # Save using storage service
+            result = self.storage_service.save_agents(policy_name, agents, save_metadata)
+            
+            if result.get("success"):
+                logger.info(f"Successfully saved {result['agent_counts']['total']} agents for policy '{policy_name}' with ID {result['policy_id']}")
+            else:
+                logger.error(f"Failed to save agents for policy '{policy_name}': {result.get('error', 'Unknown error')}")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Exception while saving agents for policy '{policy_name}': {str(e)}")
+            return {"success": False, "error": str(e)}
+    
+    def load_saved_agents(self, policy_id: str) -> Optional[Dict]:
+        """
+        Load saved agents from storage
+        
+        Args:
+            policy_id: Unique policy identifier
+            
+        Returns:
+            Dictionary containing agent data or None if not found
+        """
+        return self.storage_service.load_agents(policy_id)
+    
+    def list_saved_policies(self) -> List[Dict]:
+        """
+        List all saved policies
+        
+        Returns:
+            List of policy summaries
+        """
+        return self.storage_service.list_policies()
+    
+    def delete_saved_policy(self, policy_id: str) -> bool:
+        """
+        Delete a saved policy
+        
+        Args:
+            policy_id: Unique policy identifier
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        return self.storage_service.delete_policy(policy_id)
+    
+    def search_saved_agents(self, query: str, agent_type: Optional[str] = None) -> List[Dict]:
+        """
+        Search for agents across all saved policies
+        
+        Args:
+            query: Search query
+            agent_type: Optional filter by agent type
+            
+        Returns:
+            List of matching agents with policy information
+        """
+        return self.storage_service.search_agents(query, agent_type)

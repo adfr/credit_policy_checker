@@ -186,6 +186,132 @@ def get_agent_data_requirements():
     except Exception as e:
         return jsonify({'error': f'Failed to get data requirements: {str(e)}'}), 500
 
+# AGENT STORAGE API ROUTES
+
+@policy_checker.route('/api/save-agents', methods=['POST'])
+def save_agents():
+    """Save extracted agents to JSON file storage"""
+    try:
+        data = request.get_json()
+        policy_name = data.get('policy_name', '')
+        agents = data.get('agents', {})
+        metadata = data.get('metadata', {})
+        
+        if not policy_name:
+            return jsonify({'error': 'Policy name is required'}), 400
+        
+        if not agents:
+            return jsonify({'error': 'No agents provided'}), 400
+        
+        # Save agents using the extractor service
+        extractor = PolicyAgentExtractor()
+        result = extractor.save_extracted_agents(policy_name, agents, metadata)
+        
+        if result.get('success'):
+            return jsonify({
+                'success': True,
+                'message': f'Successfully saved {result["agent_counts"]["total"]} agents',
+                'policy_id': result['policy_id'],
+                'agent_counts': result['agent_counts']
+            })
+        else:
+            return jsonify({'error': result.get('error', 'Failed to save agents')}), 500
+            
+    except Exception as e:
+        return jsonify({'error': f'Failed to save agents: {str(e)}'}), 500
+
+@policy_checker.route('/api/load-agents/<policy_id>', methods=['GET'])
+def load_agents(policy_id):
+    """Load saved agents from storage"""
+    try:
+        extractor = PolicyAgentExtractor()
+        agent_data = extractor.load_saved_agents(policy_id)
+        
+        if agent_data is None:
+            return jsonify({'error': 'Policy not found'}), 404
+        
+        return jsonify({
+            'success': True,
+            'agent_data': agent_data
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'Failed to load agents: {str(e)}'}), 500
+
+@policy_checker.route('/api/list-policies', methods=['GET'])
+def list_policies():
+    """List all saved policies"""
+    try:
+        extractor = PolicyAgentExtractor()
+        policies = extractor.list_saved_policies()
+        
+        return jsonify({
+            'success': True,
+            'policies': policies,
+            'total_policies': len(policies)
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'Failed to list policies: {str(e)}'}), 500
+
+@policy_checker.route('/api/delete-policy/<policy_id>', methods=['DELETE'])
+def delete_policy(policy_id):
+    """Delete a saved policy"""
+    try:
+        extractor = PolicyAgentExtractor()
+        success = extractor.delete_saved_policy(policy_id)
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': f'Policy {policy_id} deleted successfully'
+            })
+        else:
+            return jsonify({'error': 'Policy not found or could not be deleted'}), 404
+            
+    except Exception as e:
+        return jsonify({'error': f'Failed to delete policy: {str(e)}'}), 500
+
+@policy_checker.route('/api/search-agents', methods=['POST'])
+def search_agents():
+    """Search for agents across all saved policies"""
+    try:
+        data = request.get_json()
+        query = data.get('query', '')
+        agent_type = data.get('agent_type', None)
+        
+        if not query:
+            return jsonify({'error': 'Search query is required'}), 400
+        
+        extractor = PolicyAgentExtractor()
+        results = extractor.search_saved_agents(query, agent_type)
+        
+        return jsonify({
+            'success': True,
+            'results': results,
+            'total_results': len(results),
+            'query': query,
+            'agent_type': agent_type
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'Failed to search agents: {str(e)}'}), 500
+
+@policy_checker.route('/api/storage-stats', methods=['GET'])
+def storage_stats():
+    """Get storage statistics"""
+    try:
+        extractor = PolicyAgentExtractor()
+        stats = extractor.storage_service.get_storage_stats()
+        
+        return jsonify({
+            'success': True,
+            'stats': stats
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'Failed to get storage stats: {str(e)}'}), 500
+
 # EXISTING LEGACY API ROUTES (for backward compatibility)
 
 @policy_checker.route('/api/restart-workflow', methods=['GET'])

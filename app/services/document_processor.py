@@ -50,11 +50,31 @@ class DocumentProcessor:
         # Validate extracted agents
         validation_results = self.agent_extractor.validate_agents(extracted_agents)
         
+        # Auto-save extracted agents with document name
+        document_summary = self.parser.get_document_summary(parsed_doc)
+        policy_name = document_summary.get('filename', 'Unknown Policy')
+        if policy_name.endswith('.pdf'):
+            policy_name = policy_name[:-4]  # Remove .pdf extension
+        
+        save_metadata = {
+            'filename': document_summary.get('filename', 'unknown'),
+            'domain_hint': domain_hint,
+            'auto_saved': True,
+            'document_summary': document_summary
+        }
+        
+        save_result = self.agent_extractor.save_extracted_agents(
+            policy_name, 
+            extracted_agents, 
+            save_metadata
+        )
+        
         return {
             'extracted_agents': extracted_agents,
             'validation': validation_results,
-            'document_summary': self.parser.get_document_summary(parsed_doc),
+            'document_summary': document_summary,
             'text_content_length': len(text_content),
+            'save_result': save_result,
             'processing_status': 'success'
         }
     
