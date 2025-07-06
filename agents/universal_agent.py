@@ -33,6 +33,71 @@ class UniversalAgent(BaseAgent):
         requirement = agent_config.get('requirement', policy_check.get('criteria', ''))
         data_fields = agent_config.get('data_fields', [])
         
+        # Check for missing required fields
+        missing_fields = []
+        for field in data_fields:
+            if field not in data or data.get(field) is None:
+                missing_fields.append(field)
+        
+        # If critical fields are missing, check if they might not be applicable
+        if missing_fields:
+            # Let the LLM determine if the missing fields are applicable to this document type
+            missing_fields_str = ', '.join(f"'{field}'" for field in missing_fields)
+            
+            applicability_prompt = f"""
+            You are evaluating whether a policy check is applicable to a document.
+            
+            Policy Check: {agent_name}
+            Requirement: {requirement}
+            Missing Fields: {missing_fields_str}
+            Available Data: {json.dumps(data, indent=2)}
+            
+            Based on the available data, determine if the missing fields are:
+            1. Simply not extracted from the document (but might be present)
+            2. Not applicable to this type of document/application
+            
+            Examples:
+            - If checking "Home Equity Loan Amount" but the document is a "primary mortgage application", then home_equity_loan_amount is NOT APPLICABLE
+            - If checking "Credit Score" but no credit scores are found, they might just be MISSING
+            
+            Return JSON:
+            {{
+                "applicable": true/false,
+                "reason": "explanation of why the check is or isn't applicable to this document"
+            }}
+            """
+            
+            try:
+                applicability_response = self.process(applicability_prompt)
+                applicability_result = json.loads(applicability_response)
+                
+                if not applicability_result.get('applicable', True):
+                    return {
+                        'check_type': policy_check.get('check_type'),
+                        'description': policy_check.get('description'),
+                        'passed': None,  # Neither passed nor failed - not applicable
+                        'reason': f"Check not applicable: {applicability_result.get('reason', 'Required fields not applicable to this document type')}",
+                        'confidence': 0.95,
+                        'missing_fields': missing_fields,
+                        'applicable': False,
+                        'domain': self.domain,
+                        'agent_type': 'universal'
+                    }
+            except:
+                # Fallback to generic missing fields message
+                pass
+            
+            return {
+                'check_type': policy_check.get('check_type'),
+                'description': policy_check.get('description'),
+                'passed': False,
+                'reason': f"Cannot evaluate {agent_name}: Required field(s) {missing_fields_str} not found in the document. This check requires these fields to assess compliance.",
+                'confidence': 1.0,
+                'missing_fields': missing_fields,
+                'domain': self.domain,
+                'agent_type': 'universal'
+            }
+        
         # Check if this is a threshold agent (like LTV) that needs focused checking
         is_threshold_agent = 'threshold' in agent_config.get('agent_id', '').lower() or 'TH' in agent_config.get('agent_id', '')
         
@@ -40,22 +105,28 @@ class UniversalAgent(BaseAgent):
             prompt = f"""
             You are a focused compliance checker for: {agent_name}
             
-            SCOPE: You ONLY check this specific requirement. Do NOT provide general assessments.
+            CRITICAL: You MUST ONLY evaluate the specific requirement stated below. 
+            DO NOT evaluate or comment on ANY other aspect of the application.
             
             Requirement to Check:
             {requirement}
             
             Required Data Fields: {', '.join(data_fields)}
             
-            Available Data:
+            Available Data (ONLY data relevant to your check):
             {json.dumps(data, indent=2)}
             
-            INSTRUCTIONS:
-            1. ONLY verify compliance with the stated requirement
-            2. Calculate any needed values from the provided data
-            3. Compare against the specific limits/thresholds
-            4. Do NOT comment on other aspects of creditworthiness
-            5. Focus solely on this single check
+            STRICT INSTRUCTIONS:
+            1. ONLY verify compliance with the EXACT requirement stated above
+            2. If you need to calculate values, use ONLY the data fields provided
+            3. Compare against the specific limits/thresholds in your requirement
+            4. CRITICAL: When comparing numbers, be mathematically accurate:
+               - If requirement says "must be below X%", then actual value > X% = FAILED
+               - If requirement says "must be above X%", then actual value < X% = FAILED
+               - Double-check your mathematical comparison logic
+            5. DO NOT mention or evaluate any data not related to your specific check
+            6. DO NOT provide any general creditworthiness assessment
+            7. Your response should be laser-focused on ONLY your assigned check
             
             Return JSON:
             {{
@@ -70,28 +141,32 @@ class UniversalAgent(BaseAgent):
             Return only JSON, no other text.
             """
         else:
+            # For non-threshold agents, also be focused on the specific check
             prompt = f"""
-            You are an expert analyst specializing in: {self.domain}
+            You are a specialized {agent_name} checker.
             
-            Task: {policy_check.get('description')}
-            Check Type: {policy_check.get('check_type')}
-            Domain: {self.domain}
+            CRITICAL: You MUST ONLY evaluate the specific requirement stated below.
             
-            Requirements/Criteria:
-            {policy_check.get('criteria')}
+            Requirement to Check:
+            {requirement}
             
-            Data to Analyze:
+            Required Data Fields: {', '.join(data_fields)}
+            
+            Available Data:
             {json.dumps(data, indent=2)}
             
-            Additional Instructions:
-            {policy_check.get('agent_instructions', 'Perform standard compliance check')}
+            INSTRUCTIONS:
+            1. Focus ONLY on verifying the stated requirement
+            2. Use ONLY the data fields provided
+            3. Do NOT evaluate aspects outside your specific check
+            4. Provide a focused assessment of compliance
             
-            Analyze the data against the requirements and return a JSON response:
+            Return JSON:
             {{
                 "passed": true/false,
-                "findings": ["list of key findings"],
+                "findings": ["list of findings ONLY related to your specific check"],
                 "confidence": 0.0-1.0,
-                "reason": "clear explanation of the decision"
+                "reason": "clear explanation focused ONLY on your specific requirement"
             }}
             
             Return only the JSON, no other text.
@@ -107,6 +182,71 @@ class UniversalAgent(BaseAgent):
         agent_name = agent_config.get('agent_name', 'Quantitative Check')
         requirement = agent_config.get('requirement', policy_check.get('criteria', ''))
         data_fields = agent_config.get('data_fields', [])
+        
+        # Check for missing required fields
+        missing_fields = []
+        for field in data_fields:
+            if field not in data or data.get(field) is None:
+                missing_fields.append(field)
+        
+        # If critical fields are missing, check if they might not be applicable
+        if missing_fields:
+            # Let the LLM determine if the missing fields are applicable to this document type
+            missing_fields_str = ', '.join(f"'{field}'" for field in missing_fields)
+            
+            applicability_prompt = f"""
+            You are evaluating whether a quantitative policy check is applicable to a document.
+            
+            Policy Check: {agent_name}
+            Requirement: {requirement}
+            Missing Fields: {missing_fields_str}
+            Available Data: {json.dumps(data, indent=2)}
+            
+            Based on the available data, determine if the missing fields are:
+            1. Simply not extracted from the document (but might be present)
+            2. Not applicable to this type of document/application
+            
+            Examples:
+            - If checking "Home Equity Loan Amount" but the document is a "primary mortgage application", then home_equity_loan_amount is NOT APPLICABLE
+            - If checking "Credit Score" but no credit scores are found, they might just be MISSING
+            
+            Return JSON:
+            {{
+                "applicable": true/false,
+                "reason": "explanation of why the check is or isn't applicable to this document"
+            }}
+            """
+            
+            try:
+                applicability_response = self.process(applicability_prompt)
+                applicability_result = json.loads(applicability_response)
+                
+                if not applicability_result.get('applicable', True):
+                    return {
+                        'check_type': policy_check.get('check_type'),
+                        'description': policy_check.get('description'),
+                        'passed': None,  # Neither passed nor failed - not applicable
+                        'reason': f"Check not applicable: {applicability_result.get('reason', 'Required fields not applicable to this document type')}",
+                        'confidence': 0.95,
+                        'missing_fields': missing_fields,
+                        'applicable': False,
+                        'domain': self.domain,
+                        'agent_type': 'universal'
+                    }
+            except:
+                # Fallback to generic missing fields message
+                pass
+            
+            return {
+                'check_type': policy_check.get('check_type'),
+                'description': policy_check.get('description'),
+                'passed': False,
+                'reason': f"Cannot evaluate {agent_name}: Required field(s) {missing_fields_str} not found in the document. This check requires these fields to perform calculations.",
+                'confidence': 1.0,
+                'missing_fields': missing_fields,
+                'domain': self.domain,
+                'agent_type': 'universal'
+            }
         
         # Check if this is a threshold agent that needs focused checking
         is_threshold_agent = 'threshold' in agent_config.get('agent_id', '').lower() or 'TH' in agent_config.get('agent_id', '')
@@ -129,8 +269,12 @@ class UniversalAgent(BaseAgent):
             1. ONLY calculate and verify compliance with the stated requirement
             2. Show the specific calculation performed
             3. Compare the calculated value against the specific threshold/limit
-            4. Do NOT comment on other aspects of creditworthiness
-            5. Focus solely on this single quantitative check
+            4. CRITICAL: When comparing numbers, be mathematically accurate:
+               - If requirement says "must be below X%", then actual value > X% = FAILED
+               - If requirement says "must be above X%", then actual value < X% = FAILED
+               - Double-check your mathematical comparison logic before concluding
+            5. Do NOT comment on other aspects of creditworthiness
+            6. Focus solely on this single quantitative check
             
             Return JSON:
             {{
@@ -146,26 +290,32 @@ class UniversalAgent(BaseAgent):
             Return only JSON, no other text.
             """
         else:
+            # For non-threshold quantitative agents, also be focused
             prompt = f"""
-            You are a quantitative analyst specializing in: {self.domain}
+            You are a specialized quantitative checker for: {agent_name}
             
-            Task: {policy_check.get('description')}
-            Perform quantitative analysis including calculations, ratios, and statistical measures.
+            CRITICAL: You MUST ONLY evaluate the specific requirement stated below.
             
-            Requirements:
-            {policy_check.get('criteria')}
+            Requirement to Check:
+            {requirement}
             
-            Data:
+            Required Data Fields: {', '.join(data_fields)}
+            
+            Available Data:
             {json.dumps(data, indent=2)}
             
-            Calculate relevant metrics and provide detailed quantitative assessment.
+            INSTRUCTIONS:
+            1. Perform calculations ONLY related to your specific requirement
+            2. Use ONLY the data fields provided
+            3. Do NOT calculate or comment on metrics outside your check
+            4. Focus solely on quantitative assessment of your requirement
             
             Return JSON:
             {{
                 "passed": true/false,
                 "calculations": {{"metric_name": {{"value": number, "formula": "description"}}}},
                 "confidence": 0.0-1.0,
-                "reason": "detailed quantitative explanation"
+                "reason": "quantitative explanation focused ONLY on your requirement"
             }}
             """
         
@@ -285,6 +435,17 @@ class UniversalAgent(BaseAgent):
         """Execute analysis and handle errors"""
         try:
             ai_response = self.process(prompt)
+            
+            # Check if response is already a JSON error from base agent
+            if isinstance(ai_response, str) and ai_response.strip().startswith('{"passed": false'):
+                result = json.loads(ai_response)
+                result.update({
+                    'check_type': policy_check.get('check_type'),
+                    'description': policy_check.get('description'),
+                    'domain': self.domain,
+                    'agent_type': 'universal'
+                })
+                return result
             
             # Debug: Print the raw response if parsing fails
             try:

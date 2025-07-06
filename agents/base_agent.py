@@ -15,7 +15,7 @@ class BaseAgent(ABC):
         """Process a prompt using OpenAI API"""
         try:
             response = self.client.chat.completions.create(
-                model="gpt-4",
+                model="gpt-4.1",
                 messages=[
                     {"role": "system", "content": f"You are a {self.agent_type} agent for credit policy compliance checking."},
                     {"role": "user", "content": prompt}

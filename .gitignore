@@ -128,4 +128,5 @@ settings_local.py
 
 # Backup files
 *.bak
-*.backup 
+*.backup
+stored_agents/

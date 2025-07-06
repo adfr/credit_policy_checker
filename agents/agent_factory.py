@@ -39,6 +39,7 @@ class AgentFactory:
         if should_use_graph and self.graph_available:
             # Use hybrid agent for credit/financial checks when graph is available
             agent = HybridCreditAgent()
+            agent.check_definition = check_definition  # Pass the check definition
             agent._origin = 'graph_database'
             agent._origin_reason = f'Domain: {domain}, Graph available for financial/credit checks'
             return agent

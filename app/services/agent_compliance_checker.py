@@ -25,29 +25,216 @@ class AgentComplianceChecker:
             Comprehensive compliance report
         """
         
-        # First, extract relevant data from the document
-        extracted_data = self._extract_data_from_document(document_content, selected_agents)
+        # Process each agent individually with tailored data extraction
+        compliance_results = []
+        all_extracted_data = {}
         
-        # Combine document data with any provided applicant data
-        combined_data = self._combine_data_sources(extracted_data, applicant_data)
+        # Remove duplicate agents first
+        unique_agents = self._remove_duplicate_agents(selected_agents)
         
-        # Run compliance checks using selected agents
-        compliance_results = self._run_agent_checks(selected_agents, combined_data)
+        for agent_config in unique_agents:
+            # Extract data specifically for this agent
+            agent_specific_data = self._extract_data_for_agent(document_content, agent_config, applicant_data)
+            
+            # Store extracted data for reporting
+            agent_id = agent_config.get('agent_id', 'unknown')
+            all_extracted_data[agent_id] = agent_specific_data
+            
+            # Run the compliance check for this specific agent
+            agent_result = self._run_single_agent_check(agent_config, agent_specific_data)
+            
+            compliance_results.append(agent_result)
         
         # Generate overall compliance assessment
-        overall_assessment = self._generate_overall_assessment(compliance_results, selected_agents)
+        overall_assessment = self._generate_overall_assessment(compliance_results, unique_agents)
         
         return {
             "compliance_summary": overall_assessment,
             "agent_results": compliance_results,
-            "extracted_data": extracted_data,
+            "extracted_data": all_extracted_data,
             "data_sources": {
-                "document_extraction": bool(extracted_data),
+                "document_extraction": bool(all_extracted_data),
                 "applicant_data_provided": bool(applicant_data),
-                "total_data_points": len(combined_data)
+                "agents_processed": len(unique_agents)
             },
             "processing_status": "completed"
         }
+    
+    def _extract_data_for_agent(self, document_content: str, agent_config: Dict, applicant_data: Optional[Dict] = None) -> Dict:
+        """Extract data specifically tailored for a single agent"""
+        
+        agent_name = agent_config.get('agent_name', 'Policy Check')
+        required_fields = agent_config.get('data_fields', [])
+        agent_requirement = agent_config.get('requirement', '')
+        
+        # Create focused extraction prompt for this specific agent
+        prompt = f"""
+        You are a document data extraction expert. Extract ONLY the specific data points needed for this policy check.
+        
+        POLICY CHECK: {agent_name}
+        REQUIREMENT: {agent_requirement}
+        
+        REQUIRED FIELDS TO EXTRACT: {', '.join(required_fields)}
+        
+        DOCUMENT CONTENT:
+        {document_content}
+        
+        EXTRACTION INSTRUCTIONS:
+        1. Focus ONLY on finding the specific fields listed above
+        2. Do NOT extract any other data points not in the required fields list
+        3. If a required field is not found or not applicable to this document, mark it as null
+        4. For numerical values, extract the actual numbers (no currency symbols or commas)
+        5. Be precise and focused on the exact fields needed for this specific check
+        
+        Return JSON in this exact format:
+        {{
+            "extracted_fields": {{
+                "field_name": {{"value": extracted_value, "found": true/false, "location": "where found in document"}},
+                ...
+            }},
+            "document_type": "type of document (e.g., mortgage application, loan agreement)",
+            "extraction_notes": "any relevant notes about the extraction for this specific check"
+        }}
+        
+        ONLY extract the fields: {', '.join(required_fields)}
+        """
+        
+        try:
+            response = self.document_analyzer.process(prompt)
+            
+            # Handle case where response is already a JSON error string
+            if isinstance(response, str) and response.strip().startswith('{"passed": false'):
+                return {
+                    '_extraction_error': 'LLM service error during document extraction',
+                    '_extraction_metadata': {
+                        'missing_fields': list(required_fields),
+                        'document_type': 'unknown',
+                        'extraction_notes': 'LLM service unavailable',
+                        'agent_name': agent_name
+                    }
+                }
+            
+            # Handle empty or None response
+            if not response or not response.strip():
+                return {
+                    '_extraction_error': 'Empty response from document extraction',
+                    '_extraction_metadata': {
+                        'missing_fields': list(required_fields),
+                        'document_type': 'unknown',
+                        'extraction_notes': 'No data extracted',
+                        'agent_name': agent_name
+                    }
+                }
+            
+            result = json.loads(response)
+            
+            # Validate response structure
+            if not isinstance(result, dict):
+                return {
+                    '_extraction_error': 'Invalid response structure from document extraction',
+                    '_extraction_metadata': {
+                        'missing_fields': list(required_fields),
+                        'document_type': 'unknown',
+                        'extraction_notes': 'Malformed extraction response',
+                        'agent_name': agent_name
+                    }
+                }
+            
+            # Flatten the extracted fields for easier access
+            flattened_data = {}
+            extracted_fields = result.get('extracted_fields', {})
+            
+            if isinstance(extracted_fields, dict):
+                for field_name, field_info in extracted_fields.items():
+                    if isinstance(field_info, dict):
+                        flattened_data[field_name] = field_info.get('value')
+                    else:
+                        flattened_data[field_name] = field_info
+            
+            # Add metadata
+            flattened_data['_extraction_metadata'] = {
+                'document_type': result.get('document_type', 'unknown'),
+                'extraction_notes': result.get('extraction_notes', ''),
+                'agent_name': agent_name,
+                'fields_requested': required_fields,
+                'fields_found': [k for k, v in flattened_data.items() if v is not None and not k.startswith('_')]
+            }
+            
+            # Combine with applicant data if provided
+            if applicant_data:
+                # Only include applicant data fields that are relevant to this agent
+                for field in required_fields:
+                    if field in applicant_data:
+                        # Use applicant data if:
+                        # 1. Field not found in document extraction, OR
+                        # 2. Field value is None/null in document extraction
+                        if field not in flattened_data or flattened_data[field] is None:
+                            flattened_data[field] = applicant_data[field]
+            
+            return flattened_data
+            
+        except Exception as e:
+            return {
+                '_extraction_error': f'Error during document extraction: {str(e)}',
+                '_extraction_metadata': {
+                    'missing_fields': list(required_fields),
+                    'document_type': 'unknown',
+                    'extraction_notes': f'Extraction failed: {str(e)}',
+                    'agent_name': agent_name
+                }
+            }
+    
+    def _run_single_agent_check(self, agent_config: Dict, agent_data: Dict) -> Dict:
+        """Run compliance check for a single agent with its specific data"""
+        
+        try:
+            # Create agent instance
+            agent = self.agent_factory.create_agent(
+                agent_config.get('check_type', 'general'),
+                agent_config
+            )
+            
+            # Create policy check object from agent config
+            policy_check = {
+                'check_type': agent_config.get('check_type', ''),
+                'description': agent_config.get('agent_name', ''),
+                'criteria': agent_config.get('requirement', ''),
+                'agent_instructions': agent_config.get('instructions', '')
+            }
+            
+            # Run the check
+            result = agent.check(policy_check, agent_data)
+            
+            # Add agent metadata to result
+            result['agent_config'] = {
+                'agent_id': agent_config.get('agent_id'),
+                'agent_name': agent_config.get('agent_name'),
+                'priority': agent_config.get('priority'),
+                'applicable_products': agent_config.get('applicable_products', []),
+                'agent_origin': getattr(agent, '_origin', 'unknown'),
+                'agent_origin_reason': getattr(agent, '_origin_reason', 'No reason provided')
+            }
+            
+            return result
+            
+        except Exception as e:
+            # Handle agent execution errors
+            return {
+                'agent_id': agent_config.get('agent_id'),
+                'agent_type': agent_config.get('agent_type', 'unknown'),
+                'passed': False,
+                'reason': f'Agent execution error: {str(e)}',
+                'confidence': 0.0,
+                'error': True,
+                'agent_config': {
+                    'agent_id': agent_config.get('agent_id'),
+                    'agent_name': agent_config.get('agent_name'),
+                    'priority': agent_config.get('priority'),
+                    'applicable_products': agent_config.get('applicable_products', []),
+                    'agent_origin': 'unknown',
+                    'agent_origin_reason': f'Agent creation/execution failed: {str(e)}'
+                }
+            }
     
     def _extract_data_from_document(self, document_content: str, selected_agents: List[Dict]) -> Dict:
         """Extract relevant data points from document based on agent requirements"""
@@ -254,8 +441,29 @@ class AgentComplianceChecker:
                     agent_config
                 )
                 
-                # Submit check to executor
-                future = executor.submit(agent.check, {}, combined_data)
+                # Extract only the data fields required by this specific agent
+                agent_data_fields = agent_config.get('data_fields', [])
+                agent_specific_data = {}
+                
+                # Only include the data fields this agent needs
+                for field in agent_data_fields:
+                    if field in combined_data:
+                        agent_specific_data[field] = combined_data[field]
+                
+                # Also include any metadata fields that might be needed
+                if '_extraction_metadata' in combined_data:
+                    agent_specific_data['_extraction_metadata'] = combined_data['_extraction_metadata']
+                
+                # Create policy check object from agent config
+                policy_check = {
+                    'check_type': agent_config.get('check_type', ''),
+                    'description': agent_config.get('agent_name', ''),
+                    'criteria': agent_config.get('requirement', ''),
+                    'agent_instructions': agent_config.get('instructions', '')
+                }
+                
+                # Submit check to executor with only the relevant data
+                future = executor.submit(agent.check, policy_check, agent_specific_data)
                 future_to_agent[future] = (agent_config, agent)
             
             # Collect results

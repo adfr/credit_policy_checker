@@ -96,33 +96,109 @@ class HybridCreditAgent(BaseAgent):
                      graph_requirements: List[Dict], linked_requirements: Dict) -> Dict:
         """Perform hybrid check using both graph knowledge and LLM reasoning"""
         
+        # Check for missing required fields using the check definition
+        if hasattr(self, 'check_definition') and self.check_definition:
+            agent_name = self.check_definition.get('agent_name', policy_check.get('description', 'Policy Check'))
+            data_fields = self.check_definition.get('data_fields', [])
+            
+            # Check for missing required fields
+            missing_fields = []
+            for field in data_fields:
+                if field not in credit_data or credit_data.get(field) is None:
+                    missing_fields.append(field)
+            
+            # If critical fields are missing, check if they might not be applicable
+            if missing_fields:
+                missing_fields_str = ', '.join(f"'{field}'" for field in missing_fields)
+                requirement = self.check_definition.get('requirement', '')
+                
+                applicability_prompt = f"""
+                You are evaluating whether a policy check is applicable to a document.
+                
+                Policy Check: {agent_name}
+                Requirement: {requirement}
+                Missing Fields: {missing_fields_str}
+                Available Data: {json.dumps(credit_data, indent=2)}
+                
+                Based on the available data, determine if the missing fields are:
+                1. Simply not extracted from the document (but might be present)
+                2. Not applicable to this type of document/application
+                
+                Examples:
+                - If checking "Home Equity Loan Amount" but the document is a "primary mortgage application", then home_equity_loan_amount is NOT APPLICABLE
+                - If checking "Credit Score" but no credit scores are found, they might just be MISSING
+                
+                Return JSON:
+                {{
+                    "applicable": true/false,
+                    "reason": "explanation of why the check is or isn't applicable to this document"
+                }}
+                """
+                
+                try:
+                    applicability_response = self.process(applicability_prompt)
+                    applicability_result = json.loads(applicability_response)
+                    
+                    if not applicability_result.get('applicable', True):
+                        return {
+                            'passed': None,  # Neither passed nor failed - not applicable
+                            'reason': f"Check not applicable: {applicability_result.get('reason', 'Required fields not applicable to this document type')}",
+                            'confidence': 0.95,
+                            'missing_fields': missing_fields,
+                            'applicable': False,
+                            'methodology': 'hybrid_graph_llm',
+                            'graph_requirements_used': 0,
+                            'linked_requirements_considered': 0
+                        }
+                except:
+                    # Fallback to generic missing fields message
+                    pass
+                
+                return {
+                    'passed': False,
+                    'reason': f"Cannot evaluate {agent_name}: Required field(s) {missing_fields_str} not found in the document. This check requires these fields to assess compliance.",
+                    'confidence': 1.0,
+                    'missing_fields': missing_fields,
+                    'methodology': 'hybrid_graph_llm',
+                    'graph_requirements_used': 0,
+                    'linked_requirements_considered': 0
+                }
+        
         # Build context from graph
         graph_context = self._build_graph_context(graph_requirements, linked_requirements)
         
         # Create enhanced prompt with graph knowledge
         prompt = f"""
-        You are checking credit policy compliance using both structured requirements and intelligent reasoning.
+        You are a focused compliance checker using graph-based requirements.
+        
+        CRITICAL: You MUST ONLY evaluate the specific policy check requested below.
         
         Policy Check Request: {json.dumps(policy_check)}
         
-        Credit Data: {json.dumps(credit_data)}
+        Available Data (ONLY data relevant to this check):
+        {json.dumps(credit_data)}
         
         Graph-Based Requirements Context:
         {graph_context}
         
-        Instructions:
-        1. Use the graph requirements as authoritative rules
-        2. Consider linked requirements for comprehensive evaluation
-        3. Apply intelligent reasoning for edge cases not explicitly covered
-        4. Evaluate both explicit requirements and implicit best practices
+        STRICT INSTRUCTIONS:
+        1. Use ONLY the graph requirements that match your specific check
+        2. Consider linked requirements ONLY if they directly impact your check
+        3. Do NOT evaluate aspects outside the requested policy check
+        4. Focus your reasoning ONLY on the specific requirement being checked
+        5. Use ONLY the data fields provided - do not infer or assume other data
+        6. CRITICAL: When comparing numbers, be mathematically accurate:
+           - If requirement says "must be below X%", then actual value > X% = FAILED
+           - If requirement says "must be above X%", then actual value < X% = FAILED
+           - Double-check your mathematical comparison logic before concluding
         
-        Provide a detailed compliance check result with:
+        Provide a focused compliance check result with:
         - passed: boolean
-        - reason: detailed explanation referencing specific requirements
+        - reason: explanation focused ONLY on the specific requirement checked
         - confidence: float (0-1)
-        - requirements_evaluated: list of requirement IDs checked
-        - linked_impacts: any impacts from linked requirements
-        - recommendations: specific actions if failed
+        - requirements_evaluated: list of requirement IDs actually used for THIS check
+        - linked_impacts: ONLY if linked requirements directly affect THIS check
+        - recommendations: ONLY if THIS specific check failed
         
         Return as JSON.
         """
@@ -130,19 +206,32 @@ class HybridCreditAgent(BaseAgent):
         response = self.process(prompt)
         
         try:
+            # Check if response is already a JSON error from base agent
+            if isinstance(response, str) and response.strip().startswith('{"passed": false'):
+                result = json.loads(response)
+                result['methodology'] = 'hybrid_graph_llm'
+                return result
+            
             result = json.loads(response)
             # Enhance with graph metadata
             result['graph_requirements_used'] = len(graph_requirements)
             result['linked_requirements_considered'] = sum(len(links) for links in linked_requirements.values())
             result['methodology'] = 'hybrid_graph_llm'
             return result
-        except:
+        except Exception as e:
+            import traceback
+            error_details = f"Failed to process hybrid check: {str(e)}"
+            print(f"DEBUG: Hybrid agent error: {error_details}")
+            print(f"DEBUG: Response was: {response[:500] if response else 'None'}")
+            print(f"DEBUG: Traceback: {traceback.format_exc()}")
+            
             return {
                 'passed': False,
-                'reason': 'Failed to process hybrid check',
+                'reason': error_details,
                 'confidence': 0.0,
                 'methodology': 'hybrid_graph_llm',
-                'error': True
+                'error': True,
+                'debug_response': str(response)[:200] if response else None
             }
     
     def _build_graph_context(self, requirements: List[Dict], linked: Dict) -> str:
