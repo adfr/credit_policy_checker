@@ -133,9 +133,9 @@ class CreditPolicyExtractor:
 
 class Neo4jPipeline:
     def __init__(self):
-        self.uri = os.getenv('NEO4J_URI', 'bolt://localhost:7687')
+        self.uri = os.getenv('NEO4J_URI', 'neo4j+s://71b9f1cc.databases.neo4j.io')
         self.user = os.getenv('NEO4J_USER', 'neo4j')
-        self.password = os.getenv('NEO4J_PASSWORD', 'password')
+        self.password = os.getenv('NEO4J_PASSWORD', 'R0-PQxTKcNZfCQoPRQon_iUsemRwZNpgSdn1TOpfJiU')
         self.driver = GraphDatabase.driver(self.uri, auth=(self.user, self.password))
     
     def close(self):

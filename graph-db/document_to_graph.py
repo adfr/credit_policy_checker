@@ -12,9 +12,9 @@ class DocumentToGraph:
     """Convert policy documents to Neo4j graph database"""
     
     def __init__(self):
-        self.uri = os.getenv('NEO4J_URI', 'bolt://localhost:7687')
+        self.uri = os.getenv('NEO4J_URI', 'neo4j+s://71b9f1cc.databases.neo4j.io')
         self.user = os.getenv('NEO4J_USER', 'neo4j')
-        self.password = os.getenv('NEO4J_PASSWORD', 'neo4j123!')
+        self.password = os.getenv('NEO4J_PASSWORD', 'R0-PQxTKcNZfCQoPRQon_iUsemRwZNpgSdn1TOpfJiU')
         self.driver = GraphDatabase.driver(self.uri, auth=(self.user, self.password))
         self.client = openai.OpenAI(api_key=os.environ.get('OPENAI_API_KEY'))
     

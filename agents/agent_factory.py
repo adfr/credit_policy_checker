@@ -143,9 +143,9 @@ class AgentFactory:
             from dotenv import load_dotenv
             
             load_dotenv('graph-db/.env')
-            uri = os.getenv('NEO4J_URI', 'bolt://localhost:7687')
-            user = os.getenv('NEO4J_USER', 'neo4j')
-            password = os.getenv('NEO4J_PASSWORD', 'neo4j123!')
+            self.uri = os.getenv('NEO4J_URI', 'neo4j+s://71b9f1cc.databases.neo4j.io')
+            self.user = os.getenv('NEO4J_USER', 'neo4j')
+            self.password = os.getenv('NEO4J_PASSWORD', 'R0-PQxTKcNZfCQoPRQon_iUsemRwZNpgSdn1TOpfJiU')
             
             driver = GraphDatabase.driver(uri, auth=(user, password))
             driver.verify_connectivity()
