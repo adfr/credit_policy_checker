@@ -39,7 +39,7 @@ def test_integrated_system():
     }
     
     # Test document path (you'll need to update this)
-    test_doc_path = "path/to/your/policy/document.pdf"
+    test_doc_path = "credit policy short.pdf"
     
     print("1. Processing Document with Hybrid Approach...")
     print("-" * 50)
