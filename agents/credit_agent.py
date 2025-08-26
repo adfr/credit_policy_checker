@@ -5,16 +5,20 @@ from dotenv import load_dotenv
 from .base_agent import BaseAgent
 import json
 
-load_dotenv('graph-db/.env')
+load_dotenv()  # Load from main .env file
 
 class CreditAgent(BaseAgent):
     """Agent that uses Neo4j graph database for credit policy analysis"""
     
     def __init__(self):
         super().__init__("credit_graph")
-        self.uri = os.getenv('NEO4J_URI', 'neo4j+s://71b9f1cc.databases.neo4j.io')
-        self.user = os.getenv('NEO4J_USER', 'neo4j')
-        self.password = os.getenv('NEO4J_PASSWORD', 'R0-PQxTKcNZfCQoPRQon_iUsemRwZNpgSdn1TOpfJiU')
+        # Get credentials from main .env - no hardcoded defaults
+        self.uri = os.getenv('NEO4J_URI')
+        self.user = os.getenv('NEO4J_USER')
+        self.password = os.getenv('NEO4J_PASSWORD')
+        
+        if not all([self.uri, self.user, self.password]):
+            raise ValueError("Neo4j credentials not found in main .env file")
         self.driver = None
         self._connect()
     

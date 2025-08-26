@@ -30,19 +30,20 @@ class Neo4jConnection:
                 result = session.run(f"MATCH (n:{label}) RETURN n")
             return [record["n"] for record in result]
 
-neo4j_conn = Neo4jConnection(
-            uri = os.getenv('NEO4J_URI', 'neo4j+s://71b9f1cc.databases.neo4j.io'),
-            user = os.getenv('NEO4J_USER', 'neo4j'),
-            password = os.getenv('NEO4J_PASSWORD', 'R0-PQxTKcNZfCQoPRQon_iUsemRwZNpgSdn1TOpfJiU') )
+# Get credentials from main .env - no hardcoded defaults
+uri = os.getenv('NEO4J_URI')
+user = os.getenv('NEO4J_USER')
+password = os.getenv('NEO4J_PASSWORD')
 
-from neo4j import GraphDatabase
-import sys
+if not all([uri, user, password]):
+    raise ValueError("Neo4j credentials not found in main .env file")
 
-uri = "neo4j+s://71b9f1cc.databases.neo4j.io'"
-user = "neo4j"
-password = "R0-PQxTKcNZfCQoPRQon_iUsemRwZNpgSdn1TOpfJiU"
+neo4j_conn = Neo4jConnection(uri, user, password)
 
+# Test the connection using the Neo4jConnection class
 try:
+    # Test basic connectivity
+    print("Testing Neo4j connection...")
     driver = GraphDatabase.driver(uri, auth=(user, password))
     driver.verify_connectivity()
     print("Connection successful!")

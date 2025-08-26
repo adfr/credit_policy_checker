@@ -6,6 +6,9 @@ Test script for Neo4j database connection
 import os
 from neo4j import GraphDatabase
 import sys
+from dotenv import load_dotenv
+
+load_dotenv()  # Load from main .env file
 
 class Neo4jConnection:
     def __init__(self, uri, user, password):
@@ -91,16 +94,20 @@ def main():
     print("🚀 Neo4j Connection Test Script")
     print("=" * 50)
     
-    # Get connection parameters from environment or use defaults
-    neo4j_conn = Neo4jConnection(
-        uri=os.getenv('NEO4J_URI', 'neo4j+s://71b9f1cc.databases.neo4j.io'),
-        user=os.getenv('NEO4J_USER', 'neo4j'),
-        password=os.getenv('NEO4J_PASSWORD', 'R0-PQxTKcNZfCQoPRQon_iUsemRwZNpgSdn1TOpfJiU')
-    )
+    # Get connection parameters from environment
+    uri = os.getenv('NEO4J_URI')
+    user = os.getenv('NEO4J_USER')
+    password = os.getenv('NEO4J_PASSWORD')
+    
+    if not all([uri, user, password]):
+        print("❌ Neo4j credentials not found in .env file")
+        sys.exit(1)
+    
+    neo4j_conn = Neo4jConnection(uri, user, password)
     
     print("\n🔌 Testing connection to Neo4j...")
-    print(f"   URI: {os.getenv('NEO4J_URI', 'neo4j+s://71b9f1cc.databases.neo4j.io')}")
-    print(f"   User: {os.getenv('NEO4J_USER', 'neo4j')}")
+    print(f"   URI: {uri}")
+    print(f"   User: {user}")
     
     if neo4j_conn.test_connection():
         print("   ✅ Connection successful!")

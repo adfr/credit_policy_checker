@@ -140,11 +140,19 @@ class AgentFactory:
         """Check if Neo4j graph database is available"""
         try:
             from neo4j import GraphDatabase
+            from dotenv import load_dotenv
             
-            # Use cloud instance credentials directly (same as test_neo.py)
-            self.uri = os.getenv('NEO4J_URI', 'neo4j+s://71b9f1cc.databases.neo4j.io')
-            self.user = os.getenv('NEO4J_USER', 'neo4j')
-            self.password = os.getenv('NEO4J_PASSWORD', 'R0-PQxTKcNZfCQoPRQon_iUsemRwZNpgSdn1TOpfJiU')
+            # Load from main .env file
+            load_dotenv()
+            
+            # Get credentials from environment - no hardcoded defaults
+            self.uri = os.getenv('NEO4J_URI')
+            self.user = os.getenv('NEO4J_USER')
+            self.password = os.getenv('NEO4J_PASSWORD')
+            
+            if not all([self.uri, self.user, self.password]):
+                print("Neo4j credentials not found in environment")
+                return False
             
             driver = GraphDatabase.driver(self.uri, auth=(self.user, self.password))
             driver.verify_connectivity()
