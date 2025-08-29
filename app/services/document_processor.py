@@ -6,13 +6,16 @@ import json
 import os
 import sys
 
-# Add the project root to the Python path
+# Add the project root and graph-db directory to the Python path
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+graph_db_path = os.path.join(project_root, 'graph-db')
 sys.path.insert(0, project_root)
+sys.path.insert(0, graph_db_path)
 
 try:
-    from graph_db.document_to_graph import DocumentToGraph
-except ImportError:
+    from document_to_graph import DocumentToGraph
+except ImportError as e:
+    print(f"Failed to import DocumentToGraph: {e}")
     DocumentToGraph = None
 
 class DocumentProcessor:

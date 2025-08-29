@@ -1,0 +1,57 @@
+[project]
+name = "credit-policy-checker"
+version = "0.1.0"
+description = "Credit Policy Checker Application"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "Flask==2.3.3",
+    "python-docx>=1.1.2",
+    "PyPDF2==3.0.1",
+    "requests>=2.32.2",
+    "openai>=1.50.0",
+    "python-dotenv==1.0.0",
+    "Werkzeug==2.3.7",
+    "flask-cors>=4.0.0",
+    "pydantic>=2.0.0",
+    "tiktoken>=0.6.0",
+    "Pillow>=10.0.0",
+    "pandas>=2.0.0",
+    "numpy<2.0.0",
+    "docling>=2.0.0",
+    "neo4j>=5.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "ruff>=0.0.280",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+exclude = [
+    "*.pyc",
+    "__pycache__",
+    ".git",
+    ".env",
+    "*.log",
+    "tests/",
+]
+
+[tool.uv]
+dev-dependencies = []
+
+[tool.ruff]
+line-length = 88
+target-version = "py38"
+
+[tool.black]
+line-length = 88
+target-version = ['py38']

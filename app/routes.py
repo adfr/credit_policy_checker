@@ -47,9 +47,9 @@ def extract_policy_agents():
         file_path = os.path.join(UPLOAD_FOLDER, filename)
         file.save(file_path)
         
-        # Extract policy agents using the new agentic approach
+        # Extract policy agents using the new agentic approach with graph support
         document_processor = DocumentProcessor()
-        result = document_processor.extract_policy_agents(file_path, domain_hint)
+        result = document_processor.process_with_graph(file_path, domain_hint)
         
         if 'error' in result:
             return jsonify(result), 500

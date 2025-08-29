@@ -8,7 +8,7 @@ from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.document_converter import DocumentConverter, PdfFormatOption
 
-load_dotenv()
+load_dotenv()  # Load from main .env file
 
 @dataclass
 class PolicySection:
@@ -133,9 +133,13 @@ class CreditPolicyExtractor:
 
 class Neo4jPipeline:
     def __init__(self):
-        self.uri = os.getenv('NEO4J_URI', 'bolt://localhost:7687')
-        self.user = os.getenv('NEO4J_USER', 'neo4j')
-        self.password = os.getenv('NEO4J_PASSWORD', 'password')
+        # Get credentials from main .env - no hardcoded defaults
+        self.uri = os.getenv('NEO4J_URI')
+        self.user = os.getenv('NEO4J_USER')
+        self.password = os.getenv('NEO4J_PASSWORD')
+        
+        if not all([self.uri, self.user, self.password]):
+            raise ValueError("Neo4j credentials not found in main .env file")
         self.driver = GraphDatabase.driver(self.uri, auth=(self.user, self.password))
     
     def close(self):

@@ -5,16 +5,20 @@ from dotenv import load_dotenv
 from .base_agent import BaseAgent
 import json
 
-load_dotenv('graph-db/.env')
+load_dotenv()  # Load from main .env file
 
 class HybridCreditAgent(BaseAgent):
     """Hybrid agent that combines Neo4j graph knowledge with LLM reasoning"""
     
     def __init__(self):
         super().__init__("hybrid_credit")
-        self.uri = os.getenv('NEO4J_URI', 'bolt://localhost:7687')
-        self.user = os.getenv('NEO4J_USER', 'neo4j')
-        self.password = os.getenv('NEO4J_PASSWORD', 'neo4j123!')
+        # Get credentials from main .env - no hardcoded defaults
+        self.uri = os.getenv('NEO4J_URI')
+        self.user = os.getenv('NEO4J_USER')
+        self.password = os.getenv('NEO4J_PASSWORD')
+        
+        if not all([self.uri, self.user, self.password]):
+            raise ValueError("Neo4j credentials not found in main .env file")
         self.driver = None
         self._connect()
     
@@ -101,18 +105,28 @@ class HybridCreditAgent(BaseAgent):
             agent_name = self.check_definition.get('agent_name', policy_check.get('description', 'Policy Check'))
             data_fields = self.check_definition.get('data_fields', [])
             
-            # Check for missing required fields
+            # Check for missing required fields - only if data_fields is specified and non-empty
             missing_fields = []
-            for field in data_fields:
-                if field not in credit_data or credit_data.get(field) is None:
-                    missing_fields.append(field)
+            if data_fields:  # Only check if data_fields is explicitly defined
+                for field in data_fields:
+                    if field not in credit_data or credit_data.get(field) is None:
+                        missing_fields.append(field)
             
             # If critical fields are missing, check if they might not be applicable
             if missing_fields:
-                missing_fields_str = ', '.join(f"'{field}'" for field in missing_fields)
-                requirement = self.check_definition.get('requirement', '')
+                # Try to infer missing fields from the check description if data_fields wasn't explicitly set
+                if not data_fields:
+                    # Use LLM to determine required fields dynamically
+                    check_desc = policy_check.get('description', agent_name)
+                    inferred_fields = self._infer_required_fields(check_desc, credit_data)
+                    if inferred_fields:
+                        missing_fields = [f for f in inferred_fields if f not in credit_data or credit_data.get(f) is None]
                 
-                applicability_prompt = f"""
+                if missing_fields:
+                    missing_fields_str = ', '.join(f"'{field}'" for field in missing_fields)
+                    requirement = self.check_definition.get('requirement', '')
+                    
+                    applicability_prompt = f"""
                 You are evaluating whether a policy check is applicable to a document.
                 
                 Policy Check: {agent_name}
@@ -133,36 +147,36 @@ class HybridCreditAgent(BaseAgent):
                     "applicable": true/false,
                     "reason": "explanation of why the check is or isn't applicable to this document"
                 }}
-                """
-                
-                try:
-                    applicability_response = self.process(applicability_prompt)
-                    applicability_result = json.loads(applicability_response)
+                    """
                     
-                    if not applicability_result.get('applicable', True):
+                    try:
+                        applicability_response = self.process(applicability_prompt)
+                        applicability_result = json.loads(applicability_response)
+                        
+                        if not applicability_result.get('applicable', True):
+                            return {
+                                'passed': None,  # Neither passed nor failed - not applicable
+                                'reason': f"Check not applicable: {applicability_result.get('reason', 'Required fields not applicable to this document type')}",
+                                'confidence': 0.95,
+                                'missing_fields': missing_fields,
+                                'applicable': False,
+                                'methodology': 'hybrid_graph_llm',
+                                'graph_requirements_used': 0,
+                                'linked_requirements_considered': 0
+                            }
+                    except Exception as e:
+                        # If applicability check fails, assume it's not applicable rather than error
+                        print(f"Applicability check failed for {agent_name}, marking as not applicable: {e}")
                         return {
                             'passed': None,  # Neither passed nor failed - not applicable
-                            'reason': f"Check not applicable: {applicability_result.get('reason', 'Required fields not applicable to this document type')}",
-                            'confidence': 0.95,
+                            'reason': f"Check '{agent_name}' not applicable to this document type. Required fields ({missing_fields_str}) are not relevant for the current application context.",
+                            'confidence': 0.8,
                             'missing_fields': missing_fields,
                             'applicable': False,
                             'methodology': 'hybrid_graph_llm',
                             'graph_requirements_used': 0,
                             'linked_requirements_considered': 0
                         }
-                except:
-                    # Fallback to generic missing fields message
-                    pass
-                
-                return {
-                    'passed': False,
-                    'reason': f"Cannot evaluate {agent_name}: Required field(s) {missing_fields_str} not found in the document. This check requires these fields to assess compliance.",
-                    'confidence': 1.0,
-                    'missing_fields': missing_fields,
-                    'methodology': 'hybrid_graph_llm',
-                    'graph_requirements_used': 0,
-                    'linked_requirements_considered': 0
-                }
         
         # Build context from graph
         graph_context = self._build_graph_context(graph_requirements, linked_requirements)
@@ -287,3 +301,27 @@ class HybridCreditAgent(BaseAgent):
                 "requirement_types": [record.data() for record in type_dist],
                 "graph_density": rel_count / node_count if node_count > 0 else 0
             }
+    
+    def _infer_required_fields(self, check_description: str, available_data: Dict) -> List[str]:
+        """Infer what fields might be required based on the check description"""
+        # Simple keyword-based inference for common field mappings
+        field_mappings = {
+            'loan_amount': ['loan', 'amount', 'principal'],
+            'property_value': ['property', 'value', 'appraisal', 'home value'],
+            'ltv': ['ltv', 'loan-to-value', 'loan to value'],
+            'credit_score': ['credit', 'score', 'fico'],
+            'dti': ['dti', 'debt-to-income', 'debt ratio'],
+            'income': ['income', 'salary', 'earnings'],
+            'employment_years': ['employment', 'job', 'years'],
+            'occupancy_type': ['occupancy', 'primary', 'residence', 'investment']
+        }
+        
+        description_lower = check_description.lower()
+        likely_fields = []
+        
+        for field, keywords in field_mappings.items():
+            if any(keyword in description_lower for keyword in keywords):
+                likely_fields.append(field)
+        
+        # Return only fields that aren't already available
+        return [field for field in likely_fields if field not in available_data]

@@ -142,16 +142,24 @@ class AgentFactory:
             from neo4j import GraphDatabase
             from dotenv import load_dotenv
             
-            load_dotenv('graph-db/.env')
-            uri = os.getenv('NEO4J_URI', 'bolt://localhost:7687')
-            user = os.getenv('NEO4J_USER', 'neo4j')
-            password = os.getenv('NEO4J_PASSWORD', 'neo4j123!')
+            # Load from main .env file
+            load_dotenv()
             
-            driver = GraphDatabase.driver(uri, auth=(user, password))
+            # Get credentials from environment - no hardcoded defaults
+            self.uri = os.getenv('NEO4J_URI')
+            self.user = os.getenv('NEO4J_USER')
+            self.password = os.getenv('NEO4J_PASSWORD')
+            
+            if not all([self.uri, self.user, self.password]):
+                print("Neo4j credentials not found in environment")
+                return False
+            
+            driver = GraphDatabase.driver(self.uri, auth=(self.user, self.password))
             driver.verify_connectivity()
             driver.close()
             return True
-        except:
+        except Exception as e:
+            print(f"Graph connection failed: {e}")
             return False
     
     def _should_use_graph(self, check_definition: Dict) -> bool:
