@@ -12,11 +12,7 @@ graph_db_path = os.path.join(project_root, 'graph-db')
 sys.path.insert(0, project_root)
 sys.path.insert(0, graph_db_path)
 
-try:
-    from document_to_graph import DocumentToGraph
-except ImportError as e:
-    print(f"Failed to import DocumentToGraph: {e}")
-    DocumentToGraph = None
+from document_to_graph import DocumentToGraph
 
 class DocumentProcessor:
     """Processes documents using agent-based policy extraction and compliance checking"""
@@ -186,15 +182,9 @@ class DocumentProcessor:
         return validation
     
     def _init_graph_builder(self):
-        """Initialize graph builder if Neo4j is available"""
-        try:
-            if DocumentToGraph:
-                self.graph_builder = DocumentToGraph()
-            else:
-                self.graph_builder = None
-        except Exception as e:
-            print(f"Graph builder not available: {e}")
-            self.graph_builder = None
+        """Initialize graph builder with Neo4j"""
+        self.graph_builder = DocumentToGraph()
+        print(f"Graph builder initialized successfully")
     
     def process_with_graph(self, file_path: str, domain_hint: str = None) -> Dict:
         """Process document with both LLM and graph-based approaches"""
