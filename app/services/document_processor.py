@@ -71,12 +71,16 @@ class DocumentProcessor:
 
         # Auto-save extracted agents with document name
         document_summary = self.parser.get_document_summary(parsed_doc)
-        policy_name = document_summary.get('filename', 'Unknown Policy')
+
+        # Extract actual filename from file_path
+        import os
+        actual_filename = os.path.basename(file_path)
+        policy_name = actual_filename
         if policy_name.endswith('.pdf'):
             policy_name = policy_name[:-4]  # Remove .pdf extension
 
         save_metadata = {
-            'filename': document_summary.get('filename', 'unknown'),
+            'filename': actual_filename,
             'domain_hint': domain_hint,
             'auto_saved': True,
             'document_summary': document_summary
@@ -169,7 +173,146 @@ class DocumentProcessor:
             result['galileo_log_stream'] = 'agent_refinement'
 
         return result
-    
+
+    def check_document_compliance_automatic(
+        self,
+        file_path: str,
+        available_agents: Dict,
+        applicant_data: Dict = None,
+        min_relevance_score: float = 0.3,
+        max_agents: int = 20
+    ) -> Dict:
+        """
+        Check document compliance using automatic agent selection
+
+        Args:
+            file_path: Path to the credit memo/document
+            available_agents: All available agents from policy extraction
+            applicant_data: Optional structured applicant data
+            min_relevance_score: Minimum relevance score for agent selection
+            max_agents: Maximum number of agents to auto-select
+
+        Returns:
+            Compliance results with automatic selection metadata
+        """
+        # Use automatic-specific client
+        from services.galileo_client_v2 import GalileoClientV2
+        from services.automatic_agent_selector import AutomaticAgentSelector
+
+        auto_compliance_client = GalileoClientV2(log_stream="automatic_compliance")
+
+        # Start a new Galileo session for automatic compliance check
+        session_id = f"auto_compliance_{int(time.time())}"
+        auto_compliance_client.start_session(session_id)
+
+        try:
+            # Parse the document to get text content
+            parsed_doc = self.parser.parse_document(file_path)
+
+            if 'error' in parsed_doc:
+                return parsed_doc
+
+            # Get text content for compliance checking
+            text_content = parsed_doc.get('text_content', '')
+            if not text_content:
+                return {
+                    'error': 'No text content found in document for compliance checking',
+                    'document_summary': self.parser.get_document_summary(parsed_doc)
+                }
+
+            # Step 1: Automatically select relevant agents
+            auto_selector = AutomaticAgentSelector()
+            selection_result = auto_selector.select_agents_automatically(
+                text_content,
+                available_agents,
+                min_score=min_relevance_score,
+                max_agents=max_agents
+            )
+
+            selected_agents = selection_result['selected_agents']
+
+            if not selected_agents:
+                return {
+                    'error': 'No relevant agents found for automatic selection',
+                    'loan_detection': selection_result.get('loan_detection', {}),
+                    'selection_metadata': selection_result.get('selection_metadata', {}),
+                    'document_summary': self.parser.get_document_summary(parsed_doc)
+                }
+
+            # Step 1.5: Log the automatic agent selector as its own agent step
+            # Convert available_agents dict to list for workflow logging
+            all_available_agents_list = []
+            for agent_type in ['threshold_agents', 'criteria_agents', 'score_agents', 'qualitative_agents']:
+                agents = available_agents.get(agent_type, [])
+                all_available_agents_list.extend(agents)
+
+            # Create a workflow logger instance for automatic compliance
+            from app.services.galileo_agent_workflow_logger import get_agent_workflow_logger
+            workflow_logger = get_agent_workflow_logger(
+                project_name="policy_compliance",
+                log_stream="automatic_compliance"
+            )
+
+            # Start a workflow for this automatic compliance check
+            document_id = f"auto_{int(time.time())}"
+            workflow = workflow_logger.start_credit_evaluation_workflow(document_id, "automatic_compliance")
+
+            # Log the automatic agent selector as its own agent step
+            workflow_logger.log_automatic_agent_selector(
+                document_content=text_content,
+                all_available_agents=all_available_agents_list,
+                loan_detection_result=selection_result.get('loan_detection', {}),
+                selected_agents=selected_agents,
+                selection_metadata={
+                    "min_relevance_score": min_relevance_score,
+                    "max_agents": max_agents,
+                    "selection_timestamp": time.time(),
+                    "selection_mode": "automatic"
+                }
+            )
+
+            # Step 2: Run compliance check using automatically selected agents
+            compliance_results = self.compliance_checker.check_compliance(
+                text_content,
+                selected_agents,
+                applicant_data,
+                all_available_agents=all_available_agents_list
+            )
+
+            # Complete the workflow
+            final_result = {
+                "automatic_selection": selection_result,
+                "compliance_results": compliance_results,
+                "processing_status": "success"
+            }
+            workflow_logger.complete_workflow(final_result)
+
+            # Flush traces to ensure they are sent to Galileo
+            auto_compliance_client.flush_traces()
+            workflow_logger.galileo_client.flush_traces()
+
+            return {
+                'compliance_results': compliance_results,
+                'document_summary': self.parser.get_document_summary(parsed_doc),
+                'selected_agents_summary': self.compliance_checker.get_agent_summary(selected_agents),
+                'automatic_selection': selection_result,
+                'processing_status': 'success',
+                'selection_mode': 'automatic',
+                'galileo_session_id': session_id,
+                'galileo_log_stream': 'automatic_compliance'
+            }
+
+        except Exception as e:
+            # Flush traces even on error
+            auto_compliance_client.flush_traces()
+
+            return {
+                'error': f'Automatic compliance checking failed: {str(e)}',
+                'processing_status': 'error',
+                'selection_mode': 'automatic',
+                'galileo_session_id': session_id
+            }
+
     def get_agent_data_requirements(self, selected_agents: List[Dict]) -> Dict:
         """Get data requirements for selected agents"""
         return self.compliance_checker.get_agent_summary(selected_agents)

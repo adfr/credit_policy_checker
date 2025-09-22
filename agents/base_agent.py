@@ -28,10 +28,12 @@ class BaseAgent(ABC):
                 messages=[
                     {"role": "system", "content": f"You are a {self.agent_type} agent for credit policy compliance checking."},
                     {"role": "user", "content": prompt}
-                ]
+                ],
+                timeout=120  # 2 minute timeout
             )
             return response.choices[0].message.content
         except Exception as e:
+            print(f"Error in {self.agent_type} agent: {str(e)}")
             # Return a valid JSON error response instead of a string
             # Galileo will automatically capture this error
             error_response = {

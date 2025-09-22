@@ -2,8 +2,11 @@ from typing import Dict, List, Optional
 from agents.policy_agents import ThresholdAgent, CriteriaAgent, ScoreAgent, QualitativeAgent
 from agents.agent_factory import AgentFactory
 from agents.base_agent import GeneralAgent
+from app.services.galileo_agent_workflow_logger import get_agent_workflow_logger
 import json
 import concurrent.futures
+import hashlib
+import time
 
 class AgentComplianceChecker:
     """Agent-based compliance checker that uses selected policy agents to check document compliance"""
@@ -11,54 +14,149 @@ class AgentComplianceChecker:
     def __init__(self):
         self.document_analyzer = GeneralAgent("document_analyzer")
         self.agent_factory = AgentFactory()
+        self.workflow_logger = get_agent_workflow_logger(
+            project_name="policy_compliance",
+            log_stream="agent_workflows"
+        )
         
-    def check_compliance(self, document_content: str, selected_agents: List[Dict], applicant_data: Optional[Dict] = None) -> Dict:
+    def check_compliance(self, document_content: str, selected_agents: List[Dict],
+                        applicant_data: Optional[Dict] = None, all_available_agents: Optional[List[Dict]] = None) -> Dict:
         """
-        Check compliance using selected policy agents
-        
+        Check compliance using selected policy agents with workflow logging
+
         Args:
             document_content: Full text content of the document to check
             selected_agents: List of agent configurations selected by user
             applicant_data: Optional structured applicant data
-            
+            all_available_agents: All available agents (for workflow logging context)
+
         Returns:
             Comprehensive compliance report
         """
-        
-        # Process each agent individually with tailored data extraction
-        compliance_results = []
-        all_extracted_data = {}
-        
-        # Remove duplicate agents first
-        unique_agents = self._remove_duplicate_agents(selected_agents)
-        
-        for agent_config in unique_agents:
-            # Extract data specifically for this agent
-            agent_specific_data = self._extract_data_for_agent(document_content, agent_config, applicant_data)
-            
-            # Store extracted data for reporting
-            agent_id = agent_config.get('agent_id', 'unknown')
-            all_extracted_data[agent_id] = agent_specific_data
-            
-            # Run the compliance check for this specific agent
-            agent_result = self._run_single_agent_check(agent_config, agent_specific_data)
-            
-            compliance_results.append(agent_result)
-        
-        # Generate overall compliance assessment
-        overall_assessment = self._generate_overall_assessment(compliance_results, unique_agents)
-        
-        return {
-            "compliance_summary": overall_assessment,
-            "agent_results": compliance_results,
-            "extracted_data": all_extracted_data,
-            "data_sources": {
-                "document_extraction": bool(all_extracted_data),
-                "applicant_data_provided": bool(applicant_data),
-                "agents_processed": len(unique_agents)
-            },
-            "processing_status": "completed"
-        }
+
+        # Generate document ID for workflow tracking
+        document_id = hashlib.md5(document_content.encode()).hexdigest()[:8]
+
+        try:
+            # Start workflow logging
+            workflow = self.workflow_logger.start_credit_evaluation_workflow(document_id)
+
+            # Log agent selection phase
+            if all_available_agents:
+                self.workflow_logger.log_agent_selection_phase(
+                    document_content=document_content,
+                    all_available_agents=all_available_agents,
+                    selected_agents=selected_agents,
+                    selection_metadata={
+                        "selection_timestamp": time.time(),
+                        "selection_mode": "user_selected" if all_available_agents else "unknown"
+                    }
+                )
+
+            # Process each agent individually with tailored data extraction
+            compliance_results = []
+            all_extracted_data = {}
+
+            # Remove duplicate agents first
+            unique_agents = self._remove_duplicate_agents(selected_agents)
+
+            for agent_config in unique_agents:
+                try:
+                    # Extract data specifically for this agent
+                    agent_specific_data = self._extract_data_for_agent(document_content, agent_config, applicant_data)
+
+                    # Store extracted data for reporting
+                    agent_id = agent_config.get('agent_id', 'unknown')
+                    all_extracted_data[agent_id] = agent_specific_data
+
+                    # Run the compliance check for this specific agent
+                    agent_result = self._run_single_agent_check(agent_config, agent_specific_data)
+
+                    # Log this agent's execution
+                    self.workflow_logger.log_agent_execution(
+                        agent_config=agent_config,
+                        agent_input_data=agent_specific_data,
+                        agent_result=agent_result,
+                        execution_metadata={
+                            "execution_timestamp": time.time(),
+                            "data_extraction_success": bool(agent_specific_data),
+                            "applicant_data_used": bool(applicant_data)
+                        }
+                    )
+
+                    compliance_results.append(agent_result)
+
+                except Exception as e:
+                    # Log error for this specific agent
+                    error_msg = f"Error processing agent {agent_config.get('agent_id', 'unknown')}: {str(e)}"
+                    self.workflow_logger.log_error(error_msg, {
+                        "agent_id": agent_config.get('agent_id'),
+                        "agent_name": agent_config.get('agent_name'),
+                        "error_type": "agent_execution_error"
+                    })
+
+                    # Add error result
+                    compliance_results.append({
+                        "agent_id": agent_config.get('agent_id', 'unknown'),
+                        "agent_name": agent_config.get('agent_name', 'Unknown Agent'),
+                        "passed": False,
+                        "reason": f"Processing error: {str(e)}",
+                        "confidence": 0.0,
+                        "error": True
+                    })
+
+            # Generate overall compliance assessment
+            overall_assessment = self._generate_overall_assessment(compliance_results, unique_agents)
+
+            # Log overall assessment
+            self.workflow_logger.log_overall_assessment(compliance_results, overall_assessment)
+
+            # Prepare final result
+            final_result = {
+                "compliance_summary": overall_assessment,
+                "agent_results": compliance_results,
+                "extracted_data": all_extracted_data,
+                "data_sources": {
+                    "document_extraction": bool(all_extracted_data),
+                    "applicant_data_provided": bool(applicant_data),
+                    "agents_processed": len(unique_agents)
+                },
+                "processing_status": "completed",
+                "workflow_id": self.workflow_logger.workflow_id
+            }
+
+            # Complete workflow
+            self.workflow_logger.complete_workflow(final_result)
+
+            return final_result
+
+        except Exception as e:
+            # Log workflow-level error
+            error_msg = f"Workflow failed: {str(e)}"
+            self.workflow_logger.log_error(error_msg, {
+                "document_id": document_id,
+                "error_type": "workflow_error",
+                "agents_count": len(selected_agents)
+            })
+
+            # Return error result
+            return {
+                "compliance_summary": {
+                    "overall_compliance": False,
+                    "confidence_score": 0.0,
+                    "risk_level": "unknown",
+                    "critical_issues": [f"Workflow error: {str(e)}"]
+                },
+                "agent_results": [],
+                "extracted_data": {},
+                "data_sources": {
+                    "document_extraction": False,
+                    "applicant_data_provided": bool(applicant_data),
+                    "agents_processed": 0
+                },
+                "processing_status": "error",
+                "error": str(e)
+            }
     
     def _extract_data_for_agent(self, document_content: str, agent_config: Dict, applicant_data: Optional[Dict] = None) -> Dict:
         """Extract data specifically tailored for a single agent"""

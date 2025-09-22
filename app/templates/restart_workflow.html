@@ -6,6 +6,7 @@
     <title>Policy Compliance Assessment - Cloudera</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         :root {
@@ -54,6 +55,84 @@
         .border-cloudera-blue-500 {
             border-color: #0E0164;
         }
+
+        /* PDF Viewer Styles */
+        #pdfViewerPanel {
+            min-width: 500px;
+            max-width: 600px;
+        }
+
+        #pdfCanvas {
+            max-width: 100%;
+            max-height: 100%;
+            border-radius: 4px;
+        }
+
+        #pdfViewerContainer {
+            overflow: auto;
+        }
+
+        /* Responsive layout adjustments */
+        @media (max-width: 1024px) {
+            #pdfViewerPanel {
+                display: none !important;
+            }
+
+            #mainLayout {
+                grid-template-columns: 1fr !important;
+            }
+        }
+
+        /* PDF viewer positioned absolutely to not affect main content size */
+        #pdfViewerPanel {
+            position: fixed;
+            top: 120px;
+            right: 20px;
+            z-index: 1000;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+        }
+
+        /* Ensure main content maintains consistent width */
+        #mainContent {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* When PDF viewer is active, add margin to main content to prevent overlap */
+        #mainLayout.pdf-viewer-active #mainContent {
+            margin-right: 600px; /* Space for PDF viewer */
+        }
+
+        /* Responsive behavior */
+        @media (max-width: 1600px) {
+            #mainLayout.pdf-viewer-active #mainContent {
+                margin-right: 580px;
+            }
+
+            #pdfViewerPanel {
+                width: 550px;
+            }
+        }
+
+        @media (max-width: 1400px) {
+            #mainLayout.pdf-viewer-active #mainContent {
+                margin-right: 520px;
+            }
+
+            #pdfViewerPanel {
+                width: 500px;
+            }
+        }
+
+        @media (max-width: 1024px) {
+            #pdfViewerPanel {
+                display: none !important;
+            }
+
+            #mainLayout.pdf-viewer-active #mainContent {
+                margin-right: 0;
+            }
+        }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
@@ -94,9 +173,12 @@
             </div>
         </div>
 
-        <!-- Content Area -->
-        <div class="max-w-6xl mx-auto">
-            
+        <!-- Content Area with PDF Viewer -->
+        <div class="w-full mx-auto px-4" style="max-width: none;">
+            <div id="mainLayout" class="grid grid-cols-1 gap-6">
+                <!-- Main Content Area -->
+                <div id="mainContent">
+
             <!-- Step 1: Upload Policy Document -->
             <div id="step1-content" class="bg-white rounded-lg shadow-lg p-6 mb-6">
                 <h2 class="text-2xl font-bold mb-4 text-black">
@@ -107,13 +189,39 @@
                     <label class="block text-sm font-medium text-black mb-2">
                         Select policy document to analyze and create compliance agents
                     </label>
-                    <input type="file" id="policyFile" accept=".pdf,.docx,.doc,.txt" 
-                           class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                    <div class="flex items-center space-x-2">
+                        <input type="file" id="policyFile" accept=".pdf,.docx,.doc,.txt"
+                               class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                        <button id="showPdfViewerBtn" class="hidden lg:hidden px-3 py-2 bg-blue-100 text-blue-600 rounded text-sm hover:bg-blue-200">
+                            <i class="fas fa-eye mr-1"></i>Preview
+                        </button>
+                    </div>
                 </div>
                 <button id="uploadPolicyBtn" class="bg-cloudera-blue text-white px-6 py-2 rounded-lg hover:bg-cloudera-blue transition-colors">
                     <i class="fas fa-upload mr-2"></i>Upload and Analyze Policy
                 </button>
-                
+
+                <!-- Or divider -->
+                <div class="flex items-center my-6">
+                    <div class="flex-1 border-t border-gray-300"></div>
+                    <span class="px-4 text-sm text-gray-500 bg-white">OR</span>
+                    <div class="flex-1 border-t border-gray-300"></div>
+                </div>
+
+                <!-- Recent Policy Agents -->
+                <div id="recentAgentsSection" class="mb-6">
+                    <h3 class="text-lg font-semibold text-black mb-3">
+                        <i class="fas fa-history text-cloudera-orange mr-2"></i>
+                        Recent Policy Agents
+                    </h3>
+                    <div id="recentAgentsList" class="space-y-3">
+                        <!-- Recent agents will be loaded here -->
+                        <div id="recentAgentsLoading" class="text-center py-4 text-gray-500">
+                            <i class="fas fa-spinner fa-spin mr-2"></i>Loading recent agents...
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Policy Analysis Results -->
                 <div id="policyResults" class="mt-6 hidden">
                     <h3 class="text-lg font-semibold text-black mb-3">Policy Analysis Results</h3>
@@ -144,9 +252,28 @@
                     Step 2: Select Compliance Agents
                 </h2>
                 <p class="text-black mb-4">Choose which compliance checks you want to assess against your document.</p>
-                
-                <!-- Agent Selection Controls -->
-                <div class="mb-4 flex space-x-4">
+
+                <!-- Selection Mode Toggle -->
+                <div class="mb-6 p-4 bg-cloudera-blue-50 rounded-lg border border-cloudera-blue-200">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-lg font-semibold text-cloudera-blue-800">Selection Mode</h3>
+                        <div class="flex items-center space-x-3">
+                            <span class="text-sm font-medium text-gray-600" id="manualLabel">Manual Selection</span>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="selectionModeToggle" class="sr-only peer">
+                                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-cloudera-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cloudera-blue"></div>
+                            </label>
+                            <span class="text-sm font-medium text-gray-600" id="automaticLabel">Automatic Selection</span>
+                        </div>
+                    </div>
+                    <div id="selectionModeDescription" class="text-sm text-gray-600">
+                        <span id="manualDescription">Manually select specific compliance agents to run.</span>
+                        <span id="automaticDescription" class="hidden">Automatically select relevant agents based on document analysis.</span>
+                    </div>
+                </div>
+
+                <!-- Manual Selection Controls -->
+                <div id="manualSelectionControls" class="mb-4 flex space-x-4">
                     <button id="selectAllBtn" class="bg-cloudera-blue text-white px-4 py-2 rounded hover:bg-cloudera-blue">
                         Select All
                     </button>
@@ -158,6 +285,37 @@
                         <span id="selectedCount" class="font-semibold text-cloudera-orange">0</span>
                         <span class="text-sm text-black"> of </span>
                         <span id="totalCount" class="font-semibold text-cloudera-orange">0</span>
+                    </div>
+                </div>
+
+                <!-- Automatic Selection Settings -->
+                <div id="automaticSelectionSettings" class="mb-4 p-4 bg-gray-50 rounded-lg border hidden">
+                    <h4 class="text-sm font-semibold text-gray-700 mb-3">Automatic Selection Settings</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">Minimum Relevance Score</label>
+                            <input type="range" id="minRelevanceScore" min="0.1" max="1.0" step="0.1" value="0.3"
+                                   class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+                            <div class="flex justify-between text-xs text-gray-500 mt-1">
+                                <span>0.1</span>
+                                <span id="relevanceScoreValue" class="font-medium">0.3</span>
+                                <span>1.0</span>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">Maximum Agents</label>
+                            <input type="range" id="maxAgents" min="5" max="30" step="1" value="20"
+                                   class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+                            <div class="flex justify-between text-xs text-gray-500 mt-1">
+                                <span>5</span>
+                                <span id="maxAgentsValue" class="font-medium">20</span>
+                                <span>30</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-3 text-xs text-gray-600">
+                        <i class="fas fa-info-circle mr-1"></i>
+                        The system will automatically detect loan type and select the most relevant agents.
                     </div>
                 </div>
 
@@ -183,8 +341,13 @@
                     <label class="block text-sm font-medium text-black mb-2">
                         Select document to assess
                     </label>
-                    <input type="file" id="assessmentFile" accept=".pdf,.docx,.doc,.txt" 
-                           class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-cloudera-orange-50 file:text-cloudera-orange-800 hover:file:bg-orange-100">
+                    <div class="flex items-center space-x-2">
+                        <input type="file" id="assessmentFile" accept=".pdf,.docx,.doc,.txt"
+                               class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-cloudera-orange-50 file:text-cloudera-orange-800 hover:file:bg-orange-100">
+                        <button id="showAssessmentPdfBtn" class="hidden lg:hidden px-3 py-2 bg-orange-100 text-orange-600 rounded text-sm hover:bg-orange-200">
+                            <i class="fas fa-eye mr-1"></i>Preview
+                        </button>
+                    </div>
                 </div>
                 
                 <button id="proceedToAssessmentBtn" class="bg-cloudera-blue text-white px-6 py-2 rounded-lg hover:bg-cloudera-blue transition-colors">
@@ -245,6 +408,19 @@
                         <div class="text-sm text-cloudera-blue">Overall Compliance Score</div>
                     </div>
 
+                    <!-- Automatic Selection Summary (if applicable) -->
+                    <div id="automaticSelectionSummary" class="mb-6 hidden">
+                        <h4 class="text-lg font-semibold text-black mb-3">
+                            <i class="fas fa-magic text-cloudera-orange mr-2"></i>
+                            Automatic Selection Summary
+                        </h4>
+                        <div class="bg-cloudera-blue-50 p-4 rounded-lg border border-cloudera-blue-200">
+                            <div id="automaticSelectionContent">
+                                <!-- Automatic selection info will be populated here -->
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Detailed Results -->
                     <div class="mb-6">
                         <h4 class="text-lg font-semibold text-black mb-3">Detailed Results</h4>
@@ -271,9 +447,47 @@
                         </button>
                     </div>
                 </div>
-            </div>
-        </div>
-    </div>
+                </div> <!-- End mainContent -->
+
+                <!-- PDF Viewer Panel (Right Side) -->
+                <div id="pdfViewerPanel" class="hidden bg-white rounded-lg shadow-lg p-4">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 id="pdfViewerTitle" class="text-lg font-semibold text-black">Document Preview</h3>
+                        <button id="closePdfViewer" class="text-gray-400 hover:text-gray-600">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+
+                    <!-- PDF Controls -->
+                    <div class="flex items-center justify-between mb-4 text-sm">
+                        <button id="pdfPrevPage" class="px-2 py-1 bg-gray-100 text-gray-600 rounded hover:bg-gray-200 disabled:opacity-50" disabled>
+                            <i class="fas fa-chevron-left"></i>
+                        </button>
+                        <span id="pdfPageInfo" class="text-gray-600">1 / 1</span>
+                        <button id="pdfNextPage" class="px-2 py-1 bg-gray-100 text-gray-600 rounded hover:bg-gray-200 disabled:opacity-50" disabled>
+                            <i class="fas fa-chevron-right"></i>
+                        </button>
+                    </div>
+
+                    <!-- PDF Canvas Container -->
+                    <div id="pdfViewerContainer" class="border border-gray-200 rounded bg-gray-50 flex items-center justify-center" style="height: 700px;">
+                        <div id="pdfPlaceholder" class="text-center text-gray-400">
+                            <i class="fas fa-file-pdf text-4xl mb-2"></i>
+                            <p>No PDF loaded</p>
+                        </div>
+                        <canvas id="pdfCanvas" class="hidden max-w-full max-h-full"></canvas>
+                    </div>
+
+                    <!-- Error display -->
+                    <div id="pdfViewerError" class="hidden mt-4 p-3 bg-red-50 border border-red-200 rounded text-red-600 text-sm">
+                        <i class="fas fa-exclamation-triangle mr-2"></i>
+                        Failed to load PDF
+                    </div>
+                </div>
+
+            </div> <!-- End mainLayout -->
+        </div> <!-- End max-w-7xl container -->
+    </div> <!-- End main container -->
 
     <!-- Loading Overlay -->
     <div id="loadingOverlay" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
@@ -293,6 +507,17 @@
             assessmentResults: null
         };
 
+        // PDF Viewer state
+        let pdfViewerState = {
+            pdfDoc: null,
+            currentPage: 1,
+            totalPages: 0,
+            scale: 1.2,
+            canvas: null,
+            ctx: null,
+            isLoading: false
+        };
+
         // Initialize
         document.addEventListener('DOMContentLoaded', function() {
             initializeWorkflow();
@@ -309,6 +534,259 @@
             document.getElementById('runAssessmentBtn').addEventListener('click', runAssessment);
             document.getElementById('restartWorkflowBtn').addEventListener('click', restartWorkflow);
             document.getElementById('exportResultsBtn').addEventListener('click', exportResults);
+
+            // Set up selection mode toggle
+            document.getElementById('selectionModeToggle').addEventListener('change', toggleSelectionMode);
+            document.getElementById('minRelevanceScore').addEventListener('input', updateRelevanceScore);
+            document.getElementById('maxAgents').addEventListener('input', updateMaxAgents);
+
+            // Set up PDF viewer
+            initializePdfViewer();
+
+            // Load recent agents on page load
+            loadRecentAgents();
+        }
+
+        function initializePdfViewer() {
+            // Set PDF.js worker
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+            // Get canvas and context
+            pdfViewerState.canvas = document.getElementById('pdfCanvas');
+            pdfViewerState.ctx = pdfViewerState.canvas.getContext('2d');
+
+            // Set up PDF viewer controls
+            document.getElementById('pdfPrevPage').addEventListener('click', showPrevPage);
+            document.getElementById('pdfNextPage').addEventListener('click', showNextPage);
+            document.getElementById('closePdfViewer').addEventListener('click', closePdfViewer);
+
+            // Set up file input listeners for PDF preview
+            document.getElementById('policyFile').addEventListener('change', function(e) {
+                if (e.target.files[0] && e.target.files[0].type === 'application/pdf') {
+                    loadPdfPreview(e.target.files[0], 'Policy Document');
+                } else if (e.target.files[0]) {
+                    // Non-PDF file uploaded, close PDF viewer if open
+                    closePdfViewer();
+                }
+            });
+
+            document.getElementById('assessmentFile').addEventListener('change', function(e) {
+                if (e.target.files[0] && e.target.files[0].type === 'application/pdf') {
+                    loadPdfPreview(e.target.files[0], 'Assessment Document');
+                } else if (e.target.files[0]) {
+                    // Non-PDF file uploaded, close PDF viewer if open
+                    closePdfViewer();
+                }
+            });
+
+            // Keyboard shortcuts for PDF navigation
+            document.addEventListener('keydown', function(e) {
+                if (pdfViewerState.pdfDoc && !document.getElementById('pdfViewerPanel').classList.contains('hidden')) {
+                    if (e.key === 'ArrowLeft' && pdfViewerState.currentPage > 1) {
+                        e.preventDefault();
+                        showPrevPage();
+                    } else if (e.key === 'ArrowRight' && pdfViewerState.currentPage < pdfViewerState.totalPages) {
+                        e.preventDefault();
+                        showNextPage();
+                    } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        closePdfViewer();
+                    }
+                }
+            });
+        }
+
+        async function loadPdfPreview(file, title) {
+            if (pdfViewerState.isLoading) return;
+
+            pdfViewerState.isLoading = true;
+            hidePdfError();
+
+            try {
+                document.getElementById('pdfViewerTitle').textContent = title;
+
+                // Convert file to array buffer
+                const arrayBuffer = await file.arrayBuffer();
+
+                // Load PDF
+                const loadingTask = pdfjsLib.getDocument(arrayBuffer);
+                pdfViewerState.pdfDoc = await loadingTask.promise;
+                pdfViewerState.totalPages = pdfViewerState.pdfDoc.numPages;
+                pdfViewerState.currentPage = 1;
+
+                // Show PDF viewer and hide placeholder
+                showPdfViewer();
+
+                // Render first page
+                await renderPage(1);
+
+                // Update UI
+                updatePdfControls();
+
+            } catch (error) {
+                console.error('Error loading PDF:', error);
+                showPdfError('Failed to load PDF: ' + error.message);
+            } finally {
+                pdfViewerState.isLoading = false;
+            }
+        }
+
+        async function renderPage(pageNum) {
+            if (!pdfViewerState.pdfDoc) return;
+
+            try {
+                const page = await pdfViewerState.pdfDoc.getPage(pageNum);
+                const viewport = page.getViewport({ scale: pdfViewerState.scale });
+
+                // Set canvas dimensions
+                pdfViewerState.canvas.height = viewport.height;
+                pdfViewerState.canvas.width = viewport.width;
+
+                // Render page
+                const renderContext = {
+                    canvasContext: pdfViewerState.ctx,
+                    viewport: viewport
+                };
+
+                await page.render(renderContext).promise;
+                pdfViewerState.currentPage = pageNum;
+                updatePdfControls();
+
+            } catch (error) {
+                console.error('Error rendering page:', error);
+                showPdfError('Failed to render page: ' + error.message);
+            }
+        }
+
+        function showPrevPage() {
+            if (pdfViewerState.currentPage > 1) {
+                renderPage(pdfViewerState.currentPage - 1);
+            }
+        }
+
+        function showNextPage() {
+            if (pdfViewerState.currentPage < pdfViewerState.totalPages) {
+                renderPage(pdfViewerState.currentPage + 1);
+            }
+        }
+
+        function updatePdfControls() {
+            const pageInfo = document.getElementById('pdfPageInfo');
+            const prevBtn = document.getElementById('pdfPrevPage');
+            const nextBtn = document.getElementById('pdfNextPage');
+
+            pageInfo.textContent = `${pdfViewerState.currentPage} / ${pdfViewerState.totalPages}`;
+            prevBtn.disabled = pdfViewerState.currentPage <= 1;
+            nextBtn.disabled = pdfViewerState.currentPage >= pdfViewerState.totalPages;
+        }
+
+        function showPdfViewer() {
+            const panel = document.getElementById('pdfViewerPanel');
+            const layout = document.getElementById('mainLayout');
+            const placeholder = document.getElementById('pdfPlaceholder');
+            const canvas = document.getElementById('pdfCanvas');
+
+            // Show panel and add active class for margin adjustment
+            panel.classList.remove('hidden');
+            layout.classList.add('pdf-viewer-active');
+
+            // Show canvas, hide placeholder
+            placeholder.classList.add('hidden');
+            canvas.classList.remove('hidden');
+        }
+
+        function closePdfViewer() {
+            const panel = document.getElementById('pdfViewerPanel');
+            const layout = document.getElementById('mainLayout');
+            const placeholder = document.getElementById('pdfPlaceholder');
+            const canvas = document.getElementById('pdfCanvas');
+
+            // Hide panel and remove active class
+            panel.classList.add('hidden');
+            layout.classList.remove('pdf-viewer-active');
+
+            // Reset PDF state
+            pdfViewerState.pdfDoc = null;
+            pdfViewerState.currentPage = 1;
+            pdfViewerState.totalPages = 0;
+
+            // Show placeholder, hide canvas
+            placeholder.classList.remove('hidden');
+            canvas.classList.add('hidden');
+
+            hidePdfError();
+        }
+
+        function showPdfError(message) {
+            const errorDiv = document.getElementById('pdfViewerError');
+            const errorMessage = document.getElementById('pdfErrorMessage');
+
+            errorMessage.textContent = message;
+            errorDiv.classList.remove('hidden');
+        }
+
+        function hidePdfError() {
+            const errorDiv = document.getElementById('pdfViewerError');
+            errorDiv.classList.add('hidden');
+        }
+
+        function toggleSelectionMode() {
+            const toggle = document.getElementById('selectionModeToggle');
+            const isAutomatic = toggle.checked;
+
+            // Update UI elements visibility
+            document.getElementById('manualDescription').classList.toggle('hidden', isAutomatic);
+            document.getElementById('automaticDescription').classList.toggle('hidden', !isAutomatic);
+            document.getElementById('manualSelectionControls').classList.toggle('hidden', isAutomatic);
+            document.getElementById('automaticSelectionSettings').classList.toggle('hidden', !isAutomatic);
+            document.getElementById('agentsList').classList.toggle('hidden', isAutomatic);
+
+            // Update labels styling
+            const manualLabel = document.getElementById('manualLabel');
+            const automaticLabel = document.getElementById('automaticLabel');
+
+            if (isAutomatic) {
+                manualLabel.classList.remove('text-cloudera-blue-800', 'font-semibold');
+                manualLabel.classList.add('text-gray-600');
+                automaticLabel.classList.remove('text-gray-600');
+                automaticLabel.classList.add('text-cloudera-blue-800', 'font-semibold');
+            } else {
+                automaticLabel.classList.remove('text-cloudera-blue-800', 'font-semibold');
+                automaticLabel.classList.add('text-gray-600');
+                manualLabel.classList.remove('text-gray-600');
+                manualLabel.classList.add('text-cloudera-blue-800', 'font-semibold');
+            }
+
+            // Update proceed button state
+            updateProceedButtonState();
+        }
+
+        function updateRelevanceScore() {
+            const slider = document.getElementById('minRelevanceScore');
+            const valueDisplay = document.getElementById('relevanceScoreValue');
+            valueDisplay.textContent = parseFloat(slider.value).toFixed(1);
+        }
+
+        function updateMaxAgents() {
+            const slider = document.getElementById('maxAgents');
+            const valueDisplay = document.getElementById('maxAgentsValue');
+            valueDisplay.textContent = slider.value;
+        }
+
+        function updateProceedButtonState() {
+            const toggle = document.getElementById('selectionModeToggle');
+            const proceedBtn = document.getElementById('proceedToDocumentBtn');
+
+            if (toggle.checked) {
+                // Automatic mode - always allow proceed
+                proceedBtn.disabled = false;
+                proceedBtn.classList.remove('disabled:bg-gray-400');
+            } else {
+                // Manual mode - check if any agents are selected
+                const selected = document.querySelectorAll('input[name="agentCheck"]:checked').length;
+                proceedBtn.disabled = selected === 0;
+                proceedBtn.classList.toggle('disabled:bg-gray-400', selected === 0);
+            }
         }
 
         function showLoading(text = 'Processing...') {
@@ -331,6 +809,7 @@
                     step.className = 'flex items-center space-x-2 p-3 rounded-lg bg-green-100 border-2 border-green-500';
                     step.querySelector('i').className = step.querySelector('i').className.replace(/text-\w+-\d+/, 'text-green-600');
                     step.querySelector('span').className = 'font-medium text-green-800';
+                    content.classList.add('hidden'); // Hide completed step content
                 } else if (i === stepNumber) {
                     // Current step
                     step.className = 'flex items-center space-x-2 p-3 rounded-lg bg-blue-100 border-2 border-blue-500';
@@ -345,8 +824,34 @@
                     content.classList.add('hidden');
                 }
             }
-            
+
             currentState.step = stepNumber;
+
+            // Handle PDF viewer visibility based on current step
+            handlePdfViewerForStep(stepNumber);
+        }
+
+        function handlePdfViewerForStep(stepNumber) {
+            const pdfPanel = document.getElementById('pdfViewerPanel');
+            const isPdfVisible = !pdfPanel.classList.contains('hidden');
+
+            // Only show PDF viewer in steps 1 and 3, and only if a PDF was loaded
+            if (stepNumber === 1 || stepNumber === 3) {
+                // Keep PDF viewer if it's already visible and we have a PDF loaded
+                if (isPdfVisible && pdfViewerState.pdfDoc) {
+                    // PDF viewer stays visible - update title based on step
+                    const title = stepNumber === 1 ? 'Policy Document' : 'Assessment Document';
+                    document.getElementById('pdfViewerTitle').textContent = title;
+                    return;
+                }
+            } else {
+                // Hide PDF viewer in steps 2 and 4 (but don't reset the PDF data)
+                if (isPdfVisible) {
+                    const layout = document.getElementById('mainLayout');
+                    pdfPanel.classList.add('hidden');
+                    layout.classList.remove('pdf-viewer-active');
+                }
+            }
         }
 
         async function uploadPolicy() {
@@ -426,56 +931,80 @@
 
         // Continue with more functions...
         async function runAssessment() {
-            const selectedCheckboxes = document.querySelectorAll('input[name="agentCheck"]:checked');
-            
-            if (selectedCheckboxes.length === 0) {
-                alert('Please select at least one agent for compliance checking');
-                return;
-            }
-            
-            // Get selected agents from currentState
-            const selectedAgents = [];
-            const extractedAgents = currentState.policyAnalysis.extracted_agents;
-            
-            // Build list of selected agents from all types
-            const allAgentTypes = ['threshold_agents', 'criteria_agents', 'score_agents', 'qualitative_agents'];
-            
-            selectedCheckboxes.forEach(checkbox => {
-                const agentId = checkbox.value;
-                
-                // Find the agent in any of the agent types
-                for (const agentType of allAgentTypes) {
-                    if (extractedAgents[agentType]) {
-                        const agent = extractedAgents[agentType].find(a => a.agent_id === agentId);
-                        if (agent) {
-                            selectedAgents.push(agent);
-                            break;
-                        }
-                    }
-                }
-            });
-
             const fileInput = document.getElementById('assessmentFile');
             const file = fileInput.files[0];
-            
+
             if (!file) {
                 alert('Please upload a document to assess');
                 return;
             }
 
-            showLoading('Running compliance assessment...');
+            const toggle = document.getElementById('selectionModeToggle');
+            const isAutomaticMode = toggle.checked;
+
+            showLoading(isAutomaticMode ? 'Running automatic compliance assessment...' : 'Running compliance assessment...');
             document.getElementById('assessmentProgress').classList.remove('hidden');
 
             try {
                 const formData = new FormData();
                 formData.append('file', file);
-                formData.append('selected_agents', JSON.stringify(selectedAgents));
                 formData.append('applicant_data', JSON.stringify({})); // Empty for now
 
-                const response = await fetch('/api/check-compliance-with-agents', {
-                    method: 'POST',
-                    body: formData
-                });
+                let response;
+
+                if (isAutomaticMode) {
+                    // Automatic mode
+                    const minScore = parseFloat(document.getElementById('minRelevanceScore').value);
+                    const maxAgents = parseInt(document.getElementById('maxAgents').value);
+
+                    formData.append('available_agents', JSON.stringify(currentState.policyAnalysis.extracted_agents));
+                    formData.append('min_relevance_score', minScore.toString());
+                    formData.append('max_agents', maxAgents.toString());
+
+                    response = await fetch('/api/check-compliance-automatic', {
+                        method: 'POST',
+                        body: formData
+                    });
+                } else {
+                    // Manual mode
+                    const selectedCheckboxes = document.querySelectorAll('input[name="agentCheck"]:checked');
+
+                    if (selectedCheckboxes.length === 0) {
+                        hideLoading();
+                        document.getElementById('assessmentProgress').classList.add('hidden');
+                        alert('Please select at least one agent for compliance checking');
+                        return;
+                    }
+
+                    // Get selected agents from currentState
+                    const selectedAgents = [];
+                    const extractedAgents = currentState.policyAnalysis.extracted_agents;
+
+                    // Build list of selected agents from all types
+                    const allAgentTypes = ['threshold_agents', 'criteria_agents', 'score_agents', 'qualitative_agents'];
+
+                    selectedCheckboxes.forEach(checkbox => {
+                        const agentId = checkbox.value;
+
+                        // Find the agent in any of the agent types
+                        for (const agentType of allAgentTypes) {
+                            if (extractedAgents[agentType]) {
+                                const agent = extractedAgents[agentType].find(a => a.agent_id === agentId);
+                                if (agent) {
+                                    selectedAgents.push(agent);
+                                    break;
+                                }
+                            }
+                        }
+                    });
+
+                    formData.append('selected_agents', JSON.stringify(selectedAgents));
+
+                    response = await fetch('/api/check-compliance-with-agents', {
+                        method: 'POST',
+                        body: formData
+                    });
+                }
 
                 const result = await response.json();
                 hideLoading();
@@ -483,7 +1012,7 @@
 
                 if (result.success) {
                     currentState.assessmentResults = result;
-                    displayAssessmentResults(result);
+                    displayAssessmentResults(result, isAutomaticMode);
                 } else {
                     alert('Error: ' + result.error);
                 }
@@ -494,7 +1023,7 @@
             }
         }
 
-        function displayAssessmentResults(result) {
+        function displayAssessmentResults(result, isAutomaticMode = false) {
             const complianceResults = result.compliance_results;
             const agentResults = complianceResults.agent_results;
             const summary = complianceResults.compliance_summary;
@@ -518,6 +1047,14 @@
             document.getElementById('graphAgents').textContent = graphAgentCount;
             document.getElementById('llmAgents').textContent = llmAgentCount;
             document.getElementById('overallScore').textContent = Math.round(summary.statistics.pass_rate * 100) + '%';
+
+            // Display automatic selection summary if applicable
+            if (isAutomaticMode && result.automatic_selection) {
+                displayAutomaticSelectionSummary(result.automatic_selection);
+                document.getElementById('automaticSelectionSummary').classList.remove('hidden');
+            } else {
+                document.getElementById('automaticSelectionSummary').classList.add('hidden');
+            }
 
             // Display detailed results
             const detailedResults = document.getElementById('detailedResults');
@@ -730,6 +1267,220 @@
             });
             
             updateSelectedCount();
+        }
+
+        function displayAutomaticSelectionSummary(automaticSelection) {
+            const content = document.getElementById('automaticSelectionContent');
+            const metadata = automaticSelection.selection_metadata;
+            const loanSummary = metadata.loan_type_summary;
+
+            const html = `
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <h5 class="font-semibold text-cloudera-blue-800 mb-2">Detected Loan Type</h5>
+                        <p class="text-sm text-gray-700">
+                            <i class="fas fa-file-invoice-dollar mr-2"></i>
+                            <strong>${loanSummary.primary_type.replace('_', ' ').toUpperCase()}</strong>
+                            ${loanSummary.subtype !== 'unknown' ? ` (${loanSummary.subtype.replace('_', ' ')})` : ''}
+                        </p>
+                        <p class="text-xs text-gray-600 mt-1">
+                            Confidence: <span class="font-medium">${Math.round(loanSummary.confidence * 100)}%</span>
+                        </p>
+                    </div>
+                    <div>
+                        <h5 class="font-semibold text-cloudera-blue-800 mb-2">Agent Selection</h5>
+                        <p class="text-sm text-gray-700">
+                            <i class="fas fa-robot mr-2"></i>
+                            <strong>${automaticSelection.total_selected}</strong> of <strong>${automaticSelection.total_available}</strong> agents selected
+                        </p>
+                        <p class="text-xs text-gray-600 mt-1">
+                            Avg relevance: <span class="font-medium">${Math.round((metadata.selection_stats.avg_relevance_score || 0) * 100)}%</span>
+                        </p>
+                    </div>
+                </div>
+                ${loanSummary.key_characteristics && loanSummary.key_characteristics.length > 0 ? `
+                <div class="mb-3">
+                    <h5 class="font-semibold text-cloudera-blue-800 mb-2">Key Characteristics</h5>
+                    <div class="flex flex-wrap gap-2">
+                        ${loanSummary.key_characteristics.map(char =>
+                            `<span class="px-2 py-1 bg-orange-100 text-orange-800 text-xs rounded-full">${char.replace('_', ' ')}</span>`
+                        ).join('')}
+                    </div>
+                </div>
+                ` : ''}
+                <div>
+                    <h5 class="font-semibold text-cloudera-blue-800 mb-2">Selection Reasoning</h5>
+                    <p class="text-sm text-gray-700">${metadata.selection_reasoning}</p>
+                </div>
+            `;
+
+            content.innerHTML = html;
+        }
+
+        function updateSelectedCount() {
+            const selected = document.querySelectorAll('input[name="agentCheck"]:checked').length;
+            const total = document.querySelectorAll('input[name="agentCheck"]').length;
+
+            document.getElementById('selectedCount').textContent = selected;
+            document.getElementById('totalCount').textContent = total;
+
+            updateProceedButtonState();
+        }
+
+        async function loadRecentAgents() {
+            try {
+                const response = await fetch('/api/list-policies');
+                const result = await response.json();
+
+                if (result.success && result.policies && result.policies.length > 0) {
+                    // Sort by timestamp (most recent first) and take last 3
+                    const sortedPolicies = result.policies
+                        .sort((a, b) => {
+                            const dateA = new Date((a.timestamp || a.created_at).replace(/\.\d{6}$/, ''));
+                            const dateB = new Date((b.timestamp || b.created_at).replace(/\.\d{6}$/, ''));
+                            return dateB - dateA;
+                        })
+                        .slice(0, 3);
+
+                    displayRecentAgents(sortedPolicies);
+                } else {
+                    displayNoRecentAgents();
+                }
+            } catch (error) {
+                console.error('Error loading recent agents:', error);
+                displayNoRecentAgents();
+            }
+        }
+
+        function displayRecentAgents(policies) {
+            const recentAgentsList = document.getElementById('recentAgentsList');
+            const loadingDiv = document.getElementById('recentAgentsLoading');
+
+            // Hide loading spinner
+            loadingDiv.style.display = 'none';
+
+            // Create cards for each recent policy
+            const html = policies.map(policy => {
+                // Handle timestamp parsing - handle both ISO format and created_at field
+                const dateString = policy.timestamp || policy.created_at;
+                let timestamp = 'Unknown date';
+                try {
+                    // Remove microseconds if present and parse
+                    const cleanDateString = dateString.replace(/\.\d{6}$/, '');
+                    const date = new Date(cleanDateString);
+                    if (!isNaN(date.getTime())) {
+                        timestamp = date.toLocaleDateString('en-US', {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                        });
+                    }
+                } catch (e) {
+                    console.warn('Error parsing date:', dateString, e);
+                }
+
+                // Use the best available name - prefer actual filename, fallback to document title, then policy name
+                const filename = policy.metadata?.filename !== 'unknown' ?
+                    policy.metadata?.filename :
+                    (policy.agents?.policy_metadata?.document_title || policy.policy_name);
+                const agentCount = policy.agent_counts?.total || 0;
+
+                return `
+                    <div class="recent-agent-card border-2 border-gray-200 rounded-lg p-4 hover:border-cloudera-orange hover:bg-orange-50 cursor-pointer transition-all duration-200"
+                         data-policy-id="${policy.policy_id}"
+                         onclick="loadRecentAgentSet('${policy.policy_id}')">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="flex items-center space-x-2">
+                                <i class="fas fa-file-alt text-cloudera-orange"></i>
+                                <h4 class="font-semibold text-gray-800 truncate" title="${filename}">${filename}</h4>
+                            </div>
+                            <span class="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-full">
+                                ${agentCount} agents
+                            </span>
+                        </div>
+                        <div class="flex items-center text-sm text-gray-500">
+                            <i class="fas fa-clock mr-1"></i>
+                            <span>${timestamp}</span>
+                        </div>
+                        <div class="mt-2 text-xs text-gray-400">
+                            Click to load these agents
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            recentAgentsList.innerHTML = html;
+        }
+
+        function displayNoRecentAgents() {
+            const recentAgentsList = document.getElementById('recentAgentsList');
+            const loadingDiv = document.getElementById('recentAgentsLoading');
+
+            // Hide loading spinner
+            loadingDiv.style.display = 'none';
+
+            recentAgentsList.innerHTML = `
+                <div class="text-center py-6 text-gray-500">
+                    <i class="fas fa-info-circle text-3xl mb-3"></i>
+                    <p>No recent policy agents found</p>
+                    <p class="text-sm">Upload a policy document to get started</p>
+                </div>
+            `;
+        }
+
+        async function loadRecentAgentSet(policyId) {
+            try {
+                showLoading('Loading recent agents...');
+
+                const response = await fetch(`/api/load-agents/${policyId}`);
+                const result = await response.json();
+
+                hideLoading();
+
+                if (result.success && result.agent_data) {
+                    // Set the current state to use these loaded agents
+                    currentState.policyAnalysis = {
+                        success: true,
+                        extracted_agents: result.agent_data.agents,
+                        validation: result.agent_data.validation || {},
+                        document_summary: result.agent_data.metadata?.document_summary || {},
+                        agent_counts: result.agent_data.agent_counts || {},
+                        file_info: {
+                            filename: result.agent_data.metadata?.filename || result.agent_data.policy_name,
+                            loaded_from_storage: true,
+                            policy_id: policyId
+                        }
+                    };
+
+                    // Display the loaded agents and proceed to step 2
+                    displayPolicyResults(currentState.policyAnalysis);
+
+                    // Show success message
+                    const toast = document.createElement('div');
+                    toast.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50';
+                    const displayName = result.agent_data.metadata?.filename !== 'unknown' ?
+                        result.agent_data.metadata?.filename :
+                        (result.agent_data.agents?.policy_metadata?.document_title || 'saved policy');
+
+                    toast.innerHTML = `
+                        <i class="fas fa-check-circle mr-2"></i>
+                        Loaded agents from ${displayName}
+                    `;
+                    document.body.appendChild(toast);
+
+                    setTimeout(() => {
+                        toast.remove();
+                    }, 3000);
+
+                } else {
+                    alert('Error loading agents: ' + (result.error || 'Unknown error'));
+                }
+            } catch (error) {
+                hideLoading();
+                alert('Error loading recent agents: ' + error.message);
+            }
         }
     </script>
 </body>

@@ -560,15 +560,23 @@ class PolicyAgentExtractor:
 
             # Make the LLM call (will be traced by Galileo)
             if self.external_galileo_client:
-                # Use the external Galileo client for consistent logging
-                response = self.external_galileo_client.chat_completion(
-                    model="gpt-5-mini",
-                    messages=[
-                        {"role": "system", "content": "You are a policy analysis expert. Extract key policy requirements and create compliance agents."},
-                        {"role": "user", "content": prompt}
-                    ]
-                ).choices[0].message.content
+                logger.info(f"Chunk {chunk_num} - Using external Galileo client for LLM call")
+                try:
+                    # Use the external Galileo client for consistent logging
+                    response = self.external_galileo_client.chat_completion(
+                        model="gpt-5-mini",
+                        messages=[
+                            {"role": "system", "content": "You are a policy analysis expert. Extract key policy requirements and create compliance agents."},
+                            {"role": "user", "content": prompt}
+                        ],
+                        timeout=120  # 2 minute timeout
+                    ).choices[0].message.content
+                    logger.info(f"Chunk {chunk_num} - LLM call completed successfully")
+                except Exception as llm_error:
+                    logger.error(f"Chunk {chunk_num} - LLM call failed: {str(llm_error)}")
+                    raise llm_error
             else:
+                logger.info(f"Chunk {chunk_num} - Using fallback agent process method")
                 # Fallback to the agent's process method
                 response = self.agent.process(prompt)
 
