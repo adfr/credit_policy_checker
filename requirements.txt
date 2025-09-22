@@ -18,3 +18,4 @@ numpy<2.0.0
 
 # Galileo AI Observability
 galileo>=1.19.0
+promptquality>=1.5.0

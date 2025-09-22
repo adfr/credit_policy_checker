@@ -164,6 +164,78 @@ def check_compliance_with_agents():
     except Exception as e:
         return jsonify({'error': f'Failed to check compliance: {str(e)}'}), 500
 
+@policy_checker.route('/api/check-compliance-automatic', methods=['POST'])
+def check_compliance_automatic():
+    """Check document compliance using automatic agent selection"""
+    try:
+        # Get the document file
+        if 'file' not in request.files:
+            return jsonify({'error': 'No document file provided'}), 400
+
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+
+        if not allowed_file(file.filename):
+            return jsonify({'error': 'File type not allowed'}), 400
+
+        # Get available agents and optional parameters from form data
+        available_agents_json = request.form.get('available_agents', '{}')
+        applicant_data_json = request.form.get('applicant_data', '{}')
+        min_score = float(request.form.get('min_relevance_score', 0.3))
+        max_agents = int(request.form.get('max_agents', 20))
+
+        try:
+            available_agents = json.loads(available_agents_json)
+            applicant_data = json.loads(applicant_data_json) if applicant_data_json != '{}' else None
+        except json.JSONDecodeError:
+            return jsonify({'error': 'Invalid JSON in available_agents or applicant_data'}), 400
+
+        if not available_agents:
+            return jsonify({'error': 'No available agents provided for automatic selection'}), 400
+
+        # Save uploaded document file
+        filename = secure_filename(file.filename)
+        os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+        file_path = os.path.join(UPLOAD_FOLDER, filename)
+        file.save(file_path)
+
+        # Run automatic compliance check
+        document_processor = DocumentProcessor()
+        result = document_processor.check_document_compliance_automatic(
+            file_path,
+            available_agents,
+            applicant_data,
+            min_relevance_score=min_score,
+            max_agents=max_agents
+        )
+
+        if 'error' in result:
+            return jsonify(result), 500
+
+        # Add file information to result
+        result['file_info'] = {
+            'filename': filename,
+            'selection_mode': 'automatic',
+            'auto_selected_count': result.get('automatic_selection', {}).get('total_selected', 0),
+            'total_available_count': result.get('automatic_selection', {}).get('total_available', 0),
+            'applicant_data_provided': bool(applicant_data)
+        }
+
+        return jsonify({
+            'success': True,
+            'compliance_results': result['compliance_results'],
+            'document_summary': result['document_summary'],
+            'selected_agents_summary': result['selected_agents_summary'],
+            'automatic_selection': result['automatic_selection'],
+            'file_info': result['file_info'],
+            'galileo_session_id': result.get('galileo_session_id'),
+            'selection_mode': 'automatic'
+        })
+
+    except Exception as e:
+        return jsonify({'error': f'Failed to run automatic compliance check: {str(e)}'}), 500
+
 @policy_checker.route('/api/get-agent-data-requirements', methods=['POST'])
 def get_agent_data_requirements():
     """Get data requirements for selected agents"""
