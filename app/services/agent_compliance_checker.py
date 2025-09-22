@@ -20,7 +20,8 @@ class AgentComplianceChecker:
         )
         
     def check_compliance(self, document_content: str, selected_agents: List[Dict],
-                        applicant_data: Optional[Dict] = None, all_available_agents: Optional[List[Dict]] = None) -> Dict:
+                        applicant_data: Optional[Dict] = None, all_available_agents: Optional[List[Dict]] = None,
+                        external_workflow_logger=None) -> Dict:
         """
         Check compliance using selected policy agents with workflow logging
 
@@ -38,20 +39,24 @@ class AgentComplianceChecker:
         document_id = hashlib.md5(document_content.encode()).hexdigest()[:8]
 
         try:
-            # Start workflow logging
-            workflow = self.workflow_logger.start_credit_evaluation_workflow(document_id)
+            # Use external workflow logger if provided, otherwise use internal one
+            active_logger = external_workflow_logger if external_workflow_logger else self.workflow_logger
 
-            # Log agent selection phase
-            if all_available_agents:
-                self.workflow_logger.log_agent_selection_phase(
-                    document_content=document_content,
-                    all_available_agents=all_available_agents,
-                    selected_agents=selected_agents,
-                    selection_metadata={
-                        "selection_timestamp": time.time(),
-                        "selection_mode": "user_selected" if all_available_agents else "unknown"
-                    }
-                )
+            # Only start a new workflow if using internal logger
+            if not external_workflow_logger:
+                workflow = self.workflow_logger.start_credit_evaluation_workflow(document_id)
+
+                # Log agent selection phase
+                if all_available_agents:
+                    self.workflow_logger.log_agent_selection_phase(
+                        document_content=document_content,
+                        all_available_agents=all_available_agents,
+                        selected_agents=selected_agents,
+                        selection_metadata={
+                            "selection_timestamp": time.time(),
+                            "selection_mode": "user_selected" if all_available_agents else "unknown"
+                        }
+                    )
 
             # Process each agent individually with tailored data extraction
             compliance_results = []
@@ -73,7 +78,7 @@ class AgentComplianceChecker:
                     agent_result = self._run_single_agent_check(agent_config, agent_specific_data)
 
                     # Log this agent's execution
-                    self.workflow_logger.log_agent_execution(
+                    active_logger.log_agent_execution(
                         agent_config=agent_config,
                         agent_input_data=agent_specific_data,
                         agent_result=agent_result,
@@ -89,7 +94,7 @@ class AgentComplianceChecker:
                 except Exception as e:
                     # Log error for this specific agent
                     error_msg = f"Error processing agent {agent_config.get('agent_id', 'unknown')}: {str(e)}"
-                    self.workflow_logger.log_error(error_msg, {
+                    active_logger.log_error(error_msg, {
                         "agent_id": agent_config.get('agent_id'),
                         "agent_name": agent_config.get('agent_name'),
                         "error_type": "agent_execution_error"
@@ -109,7 +114,9 @@ class AgentComplianceChecker:
             overall_assessment = self._generate_overall_assessment(compliance_results, unique_agents)
 
             # Log overall assessment
-            self.workflow_logger.log_overall_assessment(compliance_results, overall_assessment)
+            # Only log overall assessment if using internal logger (external logger handles it separately)
+            if not external_workflow_logger:
+                active_logger.log_overall_assessment(compliance_results, overall_assessment)
 
             # Prepare final result
             final_result = {
@@ -126,7 +133,9 @@ class AgentComplianceChecker:
             }
 
             # Complete workflow
-            self.workflow_logger.complete_workflow(final_result)
+            # Only complete workflow if using internal logger (external logger handles it separately)
+            if not external_workflow_logger:
+                active_logger.complete_workflow(final_result)
 
             return final_result
 

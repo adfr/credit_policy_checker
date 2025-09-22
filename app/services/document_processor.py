@@ -239,7 +239,7 @@ class DocumentProcessor:
                     'document_summary': self.parser.get_document_summary(parsed_doc)
                 }
 
-            # Step 1.5: Log the automatic agent selector as its own agent step
+            # Step 1.5: Set up hierarchical workflow logging for automatic compliance
             # Convert available_agents dict to list for workflow logging
             all_available_agents_list = []
             for agent_type in ['threshold_agents', 'criteria_agents', 'score_agents', 'qualitative_agents']:
@@ -253,37 +253,68 @@ class DocumentProcessor:
                 log_stream="automatic_compliance"
             )
 
-            # Start a workflow for this automatic compliance check
+            # Start the main workflow for automatic compliance check
             document_id = f"auto_{int(time.time())}"
             workflow = workflow_logger.start_credit_evaluation_workflow(document_id, "automatic_compliance")
 
-            # Log the automatic agent selector as its own agent step
-            workflow_logger.log_automatic_agent_selector(
+            # Start automatic selection sub-workflow
+            workflow_logger.start_automatic_selection_span(
                 document_content=text_content,
                 all_available_agents=all_available_agents_list,
-                loan_detection_result=selection_result.get('loan_detection', {}),
-                selected_agents=selected_agents,
                 selection_metadata={
                     "min_relevance_score": min_relevance_score,
                     "max_agents": max_agents,
-                    "selection_timestamp": time.time(),
                     "selection_mode": "automatic"
                 }
             )
+
+            # Log loan detection step within the selection span
+            workflow_logger.log_loan_detection_step(selection_result.get('loan_detection', {}))
+
+            # Log agent scoring step within the selection span
+            workflow_logger.log_agent_scoring_step(all_available_agents_list, selected_agents)
+
+            # Complete automatic selection span
+            workflow_logger.complete_automatic_selection_span(selected_agents)
+
+            # Start agent execution sub-workflow
+            workflow_logger.start_agent_execution_span()
 
             # Step 2: Run compliance check using automatically selected agents
             compliance_results = self.compliance_checker.check_compliance(
                 text_content,
                 selected_agents,
                 applicant_data,
-                all_available_agents=all_available_agents_list
+                all_available_agents=all_available_agents_list,
+                external_workflow_logger=workflow_logger
             )
 
-            # Complete the workflow
+            # Complete agent execution span
+            execution_summary = {
+                "total_agents_executed": len(selected_agents),
+                "compliance_results_summary": {
+                    "passed_agents": len([r for r in compliance_results.get('agent_results', []) if r.get('passed', False)]),
+                    "total_agents": len(compliance_results.get('agent_results', []))
+                }
+            }
+            workflow_logger.complete_agent_execution_span(execution_summary)
+
+            # Log overall assessment in main workflow
+            if compliance_results.get('agent_results') and compliance_results.get('compliance_summary'):
+                workflow_logger.log_overall_assessment(
+                    compliance_results.get('agent_results', []),
+                    compliance_results.get('compliance_summary', {})
+                )
+
+            # Complete the main workflow
             final_result = {
                 "automatic_selection": selection_result,
                 "compliance_results": compliance_results,
-                "processing_status": "success"
+                "processing_status": "success",
+                "hierarchical_structure": {
+                    "automatic_selection_span": "completed",
+                    "agent_execution_span": "completed"
+                }
             }
             workflow_logger.complete_workflow(final_result)
 
@@ -299,10 +330,22 @@ class DocumentProcessor:
                 'processing_status': 'success',
                 'selection_mode': 'automatic',
                 'galileo_session_id': session_id,
-                'galileo_log_stream': 'automatic_compliance'
+                'galileo_log_stream': 'automatic_compliance',
+                'hierarchical_structure': {
+                    "automatic_selection_span": "completed",
+                    "agent_execution_span": "completed"
+                }
             }
 
         except Exception as e:
+            # Log error to workflow if logger exists
+            if 'workflow_logger' in locals():
+                workflow_logger.log_error(f'Automatic compliance checking failed: {str(e)}', {
+                    "error_type": "automatic_compliance_error",
+                    "session_id": session_id
+                })
+                workflow_logger.galileo_client.flush_traces()
+
             # Flush traces even on error
             auto_compliance_client.flush_traces()
 
