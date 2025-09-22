@@ -2,9 +2,11 @@ from typing import Dict, List
 from app.parsers.document_parser import DocumentParser
 from app.services.policy_agent_extractor import PolicyAgentExtractor
 from app.services.agent_compliance_checker import AgentComplianceChecker
+from app.services.galileo_client_v2 import get_galileo_client_v2
 import json
 import os
 import sys
+import time
 
 # Add the project root and graph-db directory to the Python path
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -16,22 +18,36 @@ from document_to_graph import DocumentToGraph
 
 class DocumentProcessor:
     """Processes documents using agent-based policy extraction and compliance checking"""
-    
+
     def __init__(self):
         self.parser = DocumentParser()
         self.agent_extractor = PolicyAgentExtractor()
         self.compliance_checker = AgentComplianceChecker()
         self.graph_builder = None
         self._init_graph_builder()
+
+        # Initialize Galileo V2 client with session support
+        self.galileo_client = get_galileo_client_v2()
+        print(f"DocumentProcessor initialized with Galileo V2 observability")
+        print(f"  Project: {self.galileo_client.project_name}")
+        print(f"  Log Stream: {self.galileo_client.log_stream}")
     
     def extract_policy_agents(self, file_path: str, domain_hint: str = None) -> Dict:
         """Extract policy agents from a policy document"""
+        # Use extraction-specific client
+        from services.galileo_client_v2 import GalileoClientV2
+        extraction_client = GalileoClientV2(log_stream="policy_extraction")
+
+        # Start a new Galileo session for policy extraction
+        session_id = f"policy_extraction_{int(time.time())}"
+        extraction_client.start_session(session_id)
+
         # Parse the document to get text content
         parsed_doc = self.parser.parse_document(file_path)
-        
+
         if 'error' in parsed_doc:
             return parsed_doc
-        
+
         # Get text content for agent extraction
         text_content = parsed_doc.get('text_content', '')
         if not text_content:
@@ -39,52 +55,69 @@ class DocumentProcessor:
                 'error': 'No text content found in document for agent extraction',
                 'document_summary': self.parser.get_document_summary(parsed_doc)
             }
-        
-        # Extract policy agents using LLM
-        extracted_agents = self.agent_extractor.extract_policy_agents(text_content, domain_hint)
-        
+
+        # Create a new agent extractor with the extraction client to avoid dual tracing
+        from services.policy_agent_extractor import PolicyAgentExtractor
+        extraction_agent_extractor = PolicyAgentExtractor(galileo_client=extraction_client)
+
+        # Extract policy agents using LLM (traces will be captured for each chunk)
+        extracted_agents = extraction_agent_extractor.extract_policy_agents(text_content, domain_hint)
+
         if 'error' in extracted_agents:
             return extracted_agents
-        
+
         # Validate extracted agents
-        validation_results = self.agent_extractor.validate_agents(extracted_agents)
-        
+        validation_results = extraction_agent_extractor.validate_agents(extracted_agents)
+
         # Auto-save extracted agents with document name
         document_summary = self.parser.get_document_summary(parsed_doc)
         policy_name = document_summary.get('filename', 'Unknown Policy')
         if policy_name.endswith('.pdf'):
             policy_name = policy_name[:-4]  # Remove .pdf extension
-        
+
         save_metadata = {
             'filename': document_summary.get('filename', 'unknown'),
             'domain_hint': domain_hint,
             'auto_saved': True,
             'document_summary': document_summary
         }
-        
-        save_result = self.agent_extractor.save_extracted_agents(
-            policy_name, 
-            extracted_agents, 
+
+        save_result = extraction_agent_extractor.save_extracted_agents(
+            policy_name,
+            extracted_agents,
             save_metadata
         )
-        
+
+        # Flush traces to ensure they are sent to Galileo
+        extraction_client.flush_traces()
+
         return {
             'extracted_agents': extracted_agents,
             'validation': validation_results,
             'document_summary': document_summary,
             'text_content_length': len(text_content),
             'save_result': save_result,
-            'processing_status': 'success'
+            'processing_status': 'success',
+            'galileo_session_id': session_id,
+            'galileo_log_stream': 'policy_extraction'
         }
     
     def check_document_compliance(self, file_path: str, selected_agents: List[Dict], applicant_data: Dict = None) -> Dict:
         """Check document compliance using selected policy agents"""
+        # Use compliance-specific client
+        from services.galileo_client_v2 import GalileoClientV2
+        compliance_client = GalileoClientV2(log_stream="compliance_checking")
+
+        # Start a new Galileo session for this compliance check
+        session_id = f"compliance_check_{int(time.time())}"
+        compliance_client.start_session(session_id)
+
         # Parse the document to get text content
         parsed_doc = self.parser.parse_document(file_path)
-        
+
         if 'error' in parsed_doc:
             return parsed_doc
-        
+
         # Get text content for compliance checking
         text_content = parsed_doc.get('text_content', '')
         if not text_content:
@@ -92,24 +125,50 @@ class DocumentProcessor:
                 'error': 'No text content found in document for compliance checking',
                 'document_summary': self.parser.get_document_summary(parsed_doc)
             }
-        
-        # Run compliance check using selected agents
+
+        # Run compliance check using selected agents (traces will be captured automatically)
         compliance_results = self.compliance_checker.check_compliance(
-            text_content, 
-            selected_agents, 
+            text_content,
+            selected_agents,
             applicant_data
         )
-        
+
+        # Flush traces to ensure they are sent to Galileo
+        compliance_client.flush_traces()
+
         return {
             'compliance_results': compliance_results,
             'document_summary': self.parser.get_document_summary(parsed_doc),
             'selected_agents_summary': self.compliance_checker.get_agent_summary(selected_agents),
-            'processing_status': 'success'
+            'processing_status': 'success',
+            'galileo_session_id': session_id,
+            'galileo_log_stream': 'compliance_checking'
         }
     
     def refine_extracted_agents(self, extracted_agents: Dict, user_feedback: Dict) -> Dict:
         """Refine extracted agents based on user feedback"""
-        return self.agent_extractor.refine_agents(extracted_agents, user_feedback)
+        # Create a refinement-specific client
+        from services.galileo_client_v2 import GalileoClientV2
+        from services.policy_agent_extractor import PolicyAgentExtractor
+
+        refinement_client = GalileoClientV2(log_stream="agent_refinement")
+        refinement_extractor = PolicyAgentExtractor(galileo_client=refinement_client)
+
+        # Start session for refinement
+        session_id = f"agent_refinement_{int(time.time())}"
+        refinement_client.start_session(session_id)
+
+        result = refinement_extractor.refine_agents(extracted_agents, user_feedback)
+
+        # Flush traces
+        refinement_client.flush_traces()
+
+        # Add session info to result if it's a dict
+        if isinstance(result, dict):
+            result['galileo_session_id'] = session_id
+            result['galileo_log_stream'] = 'agent_refinement'
+
+        return result
     
     def get_agent_data_requirements(self, selected_agents: List[Dict]) -> Dict:
         """Get data requirements for selected agents"""
