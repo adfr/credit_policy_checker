@@ -20,6 +20,7 @@ dependencies = [
     "numpy<2.0.0",
     "docling>=2.0.0",
     "neo4j>=5.0.0",
+    "galileo>=1.19.0",
 ]
 
 [project.optional-dependencies]

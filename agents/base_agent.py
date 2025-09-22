@@ -1,30 +1,39 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict
-import openai
 import os
 import json
+import sys
+
+# Add app directory to path for imports
+app_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'app')
+sys.path.insert(0, app_path)
+
+from services.galileo_client_v2 import get_galileo_client_v2
 
 class BaseAgent(ABC):
     """Base class for all compliance checking agents"""
-    
+
     def __init__(self, agent_type: str):
         self.agent_type = agent_type
-        self.client = openai.OpenAI(api_key=os.environ.get('OPENAI_API_KEY'))
+        # Use simplified Galileo V2 client for automatic observability
+        self.galileo_client = get_galileo_client_v2()
+        self.client = self.galileo_client.client
     
     def process(self, prompt: str) -> Any:
-        """Process a prompt using OpenAI API"""
+        """Process a prompt using OpenAI API with Galileo logging"""
         try:
-            response = self.client.chat.completions.create(
-                model="gpt-4.1",
+            # Use Galileo V2 client's chat_completion for automatic tracing
+            response = self.galileo_client.chat_completion(
+                model="gpt-5-mini",
                 messages=[
                     {"role": "system", "content": f"You are a {self.agent_type} agent for credit policy compliance checking."},
                     {"role": "user", "content": prompt}
-                ],
-                temperature=0.1
+                ]
             )
             return response.choices[0].message.content
         except Exception as e:
             # Return a valid JSON error response instead of a string
+            # Galileo will automatically capture this error
             error_response = {
                 "passed": False,
                 "reason": f"OpenAI API error: {str(e)}",

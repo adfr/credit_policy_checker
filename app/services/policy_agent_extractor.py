@@ -25,12 +25,18 @@ logger = logging.getLogger(__name__)
 class PolicyAgentExtractor:
     """Extracts policy information from documents and generates compliance agents"""
     
-    def __init__(self):
-        self.agent = GeneralAgent("policy_agent_extractor")
+    def __init__(self, galileo_client=None):
+        # Only create the base agent if no external client is provided
+        if galileo_client is None:
+            self.agent = GeneralAgent("policy_agent_extractor")
+        else:
+            self.agent = None  # Don't create agent if using external client
+
         self.max_tokens = 500  # Reduced for smaller, more focused chunks
         self.min_chunk_tokens = 200  # Minimum meaningful chunk size
         self.encoding = tiktoken.encoding_for_model("gpt-4")
         self.storage_service = AgentStorageService()
+        self.external_galileo_client = galileo_client
     
     def _count_tokens(self, text: str) -> int:
         """Count tokens in text"""
@@ -550,8 +556,24 @@ class PolicyAgentExtractor:
         
         try:
             logger.info(f"Sending chunk {chunk_num} to LLM for agent extraction...")
-            response = self.agent.process(prompt)
-            
+            logger.info(f"Chunk {chunk_num} prompt length: {len(prompt)} characters, {self._count_tokens(prompt)} tokens")
+
+            # Make the LLM call (will be traced by Galileo)
+            if self.external_galileo_client:
+                # Use the external Galileo client for consistent logging
+                response = self.external_galileo_client.chat_completion(
+                    model="gpt-5-mini",
+                    messages=[
+                        {"role": "system", "content": "You are a policy analysis expert. Extract key policy requirements and create compliance agents."},
+                        {"role": "user", "content": prompt}
+                    ]
+                ).choices[0].message.content
+            else:
+                # Fallback to the agent's process method
+                response = self.agent.process(prompt)
+
+            logger.info(f"Chunk {chunk_num} received response of length: {len(response)} characters")
+
             # Parse the response
             result = json.loads(response)
             
@@ -626,7 +648,24 @@ class PolicyAgentExtractor:
         """
         
         try:
-            response = self.agent.process(prompt)
+            logger.info("Sending refinement request to LLM...")
+            logger.info(f"Refinement prompt length: {len(prompt)} characters")
+
+            # Make the LLM call (will be traced by Galileo)
+            if self.external_galileo_client:
+                # Use the external Galileo client for consistent logging
+                response = self.external_galileo_client.chat_completion(
+                    model="gpt-5-mini",
+                    messages=[
+                        {"role": "system", "content": "You are a policy analysis expert. Refine extracted policy agents based on user feedback."},
+                        {"role": "user", "content": prompt}
+                    ]
+                ).choices[0].message.content
+            else:
+                # Fallback to the agent's process method
+                response = self.agent.process(prompt)
+
+            logger.info(f"Refinement response received: {len(response) if response else 0} characters")
             
             # Handle case where response is already a JSON error string
             if isinstance(response, str) and response.strip().startswith('{"passed": false'):
