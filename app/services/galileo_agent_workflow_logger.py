@@ -25,12 +25,22 @@ class GalileoAgentWorkflowLogger:
         self.galileo_client = GalileoClientV2(project_name=project_name, log_stream=log_stream)
         self.current_workflow = None
         self.workflow_id = None
+        self.automatic_selection_span = None  # Track the automatic selection sub-workflow
+        self.agent_execution_span = None      # Track the agent execution sub-workflow
 
         # Initialize promptquality if available
         if PROMPTQUALITY_AVAILABLE:
             try:
-                pq.login()
-                print(f"GalileoAgentWorkflowLogger initialized with project: {project_name}, stream: {log_stream}")
+                # Use environment variable for API key
+                import os
+                api_key = os.environ.get("GALILEO_API_KEY")
+                if api_key:
+                    pq.login(api_key)
+                    pq.set_project(project_name)
+                    print(f"GalileoAgentWorkflowLogger initialized with project: {project_name}, stream: {log_stream}")
+                else:
+                    print(f"Warning: GALILEO_API_KEY not found, using fallback logging")
+                    PROMPTQUALITY_AVAILABLE = False
             except Exception as e:
                 print(f"Warning: Could not initialize promptquality: {e}")
                 PROMPTQUALITY_AVAILABLE = False
@@ -48,30 +58,185 @@ class GalileoAgentWorkflowLogger:
         """
         self.workflow_id = f"credit_eval_{document_id}_{int(time.time())}"
 
-        if PROMPTQUALITY_AVAILABLE:
+        # Since GalileoClientV2 doesn't have log_llm_call, we'll just track internally
+        self.current_workflow = {
+            "workflow_id": self.workflow_id,
+            "status": "started",
+            "document_id": document_id,
+            "workflow_type": workflow_type
+        }
+        print(f"Started workflow: {self.workflow_id}")
+        return self.current_workflow
+
+    def start_automatic_selection_span(self, document_content: str, all_available_agents: List[Dict],
+                                      selection_metadata: Optional[Dict] = None) -> None:
+        """
+        Start a hierarchical workflow span for automatic agent selection process
+
+        Args:
+            document_content: Document content being analyzed
+            all_available_agents: All agents available for selection
+            selection_metadata: Additional metadata about the selection process
+        """
+        if not self.current_workflow:
+            print("Warning: No active workflow to start automatic selection span")
+            return
+
+        # Prepare input data for the automatic selection span
+        selection_input = {
+            "document_summary": document_content[:500] + "..." if len(document_content) > 500 else document_content,
+            "total_available_agents": len(all_available_agents),
+            "available_agent_types": list(set([agent.get('display_type', 'unknown') for agent in all_available_agents])),
+            "selection_criteria": {
+                "min_relevance_score": selection_metadata.get("min_relevance_score", 0.3),
+                "max_agents": selection_metadata.get("max_agents", 20)
+            }
+        }
+
+        # Track automatic selection internally
+        self.automatic_selection_span = {
+            "span_id": f"selection_{self.workflow_id}",
+            "active": True,
+            "total_agents": len(all_available_agents),
+            "metadata": selection_metadata
+        }
+        print(f"Started automatic selection span for {len(all_available_agents)} available agents")
+
+    def log_loan_detection_step(self, loan_detection_result: Dict) -> None:
+        """
+        Log the loan detection step within the automatic selection span
+
+        Args:
+            loan_detection_result: Result from loan type detection
+        """
+        if not self.automatic_selection_span:
+            print("Warning: No active automatic selection span for loan detection")
+            return
+
+        detection_input = "Document analysis for loan type classification"
+        detection_output = {
+            "loan_type": loan_detection_result.get("loan_type", "unknown"),
+            "confidence": loan_detection_result.get("confidence", 0.0),
+            "characteristics": loan_detection_result.get("characteristics", [])
+        }
+
+        # Track loan detection internally
+        print(f"Logged loan detection: {loan_detection_result.get('loan_type', 'unknown')} (confidence: {loan_detection_result.get('confidence', 0.0)})")
+
+    def log_agent_scoring_step(self, all_available_agents: List[Dict], selected_agents: List[Dict]) -> None:
+        """
+        Log the agent scoring and selection step within the automatic selection span
+
+        Args:
+            all_available_agents: All agents that were evaluated
+            selected_agents: Agents that were selected based on scoring
+        """
+        if not self.automatic_selection_span:
+            print("Warning: No active automatic selection span for agent scoring")
+            return
+
+        scoring_input = {
+            "agents_to_evaluate": [
+                {
+                    "agent_id": agent.get('agent_id'),
+                    "agent_name": agent.get('agent_name'),
+                    "agent_type": agent.get('display_type')
+                }
+                for agent in all_available_agents
+            ]
+        }
+
+        scoring_output = {
+            "selected_agents": [
+                {
+                    "agent_id": agent.get('agent_id'),
+                    "agent_name": agent.get('agent_name'),
+                    "agent_type": agent.get('display_type'),
+                    "relevance_score": agent.get('relevance_score', 0.0),
+                    "selection_reason": agent.get('selection_reason', 'automatically selected')
+                }
+                for agent in selected_agents
+            ],
+            "selection_count": len(selected_agents),
+            "total_evaluated": len(all_available_agents)
+        }
+
+        if PROMPTQUALITY_AVAILABLE and hasattr(self.automatic_selection_span, 'add_llm'):
             try:
-                # Create evaluation run for this workflow
-                self.evaluate_run = pq.EvaluateRun(
-                    run_name=self.workflow_id,
-                    project_name=self.project_name,
-                    scorers=[]  # We'll add custom metrics later
+                self.automatic_selection_span.add_llm(
+                    input=json.dumps(scoring_input, indent=2),
+                    output=json.dumps(scoring_output, indent=2),
+                    model="gpt-4",
+                    metadata={
+                        "step_type": "agent_scoring",
+                        "agent_name": "AgentScorer",
+                        "total_evaluated": str(len(all_available_agents)),
+                        "selected_count": str(len(selected_agents))
+                    }
                 )
-
-                # Start the workflow
-                self.current_workflow = self.evaluate_run.add_workflow(
-                    input=json.dumps({"document_id": document_id, "workflow_type": workflow_type}, indent=2)
-                )
-
-                print(f"Started workflow: {self.workflow_id}")
-                return self.current_workflow
-
+                print(f"Logged agent scoring: {len(selected_agents)} agents selected from {len(all_available_agents)} evaluated")
             except Exception as e:
-                print(f"Error starting workflow: {e}")
-                return None
+                print(f"Error logging agent scoring: {e}")
+
+    def complete_automatic_selection_span(self, selected_agents: List[Dict]) -> None:
+        """
+        Complete the automatic selection span with final results
+
+        Args:
+            selected_agents: Final list of selected agents
+        """
+        if not self.automatic_selection_span:
+            print("Warning: No active automatic selection span to complete")
+            return
+
+        final_output = {
+            "selected_agents": [
+                {
+                    "agent_id": agent.get('agent_id'),
+                    "agent_name": agent.get('agent_name'),
+                    "agent_type": agent.get('display_type')
+                }
+                for agent in selected_agents
+            ],
+            "total_selected": len(selected_agents)
+        }
+
+        if PROMPTQUALITY_AVAILABLE and hasattr(self.automatic_selection_span, 'conclude'):
+            try:
+                self.automatic_selection_span.conclude(
+                    output=json.dumps(final_output, indent=2)
+                )
+                print(f"Completed automatic selection span with {len(selected_agents)} agents selected")
+                self.automatic_selection_span = None  # Reset the span
+            except Exception as e:
+                print(f"Error completing automatic selection span: {e}")
+
+    def start_agent_execution_span(self) -> None:
+        """
+        Start a hierarchical workflow span for individual agent executions
+        """
+        if not self.current_workflow:
+            print("Warning: No active workflow to start agent execution span")
+            return
+
+        execution_input = "Execute selected agents for compliance checking"
+
+        if PROMPTQUALITY_AVAILABLE and hasattr(self.current_workflow, 'add_sub_workflow'):
+            try:
+                # Create a sub-workflow for agent execution
+                self.agent_execution_span = self.current_workflow.add_sub_workflow(
+                    input=execution_input,
+                    name="Agent Execution",
+                    metadata={
+                        "span_type": "agent_execution",
+                        "workflow_phase": "execution"
+                    }
+                )
+                print("Started agent execution span")
+            except Exception as e:
+                print(f"Error starting agent execution span: {e}")
         else:
-            # Fallback to basic logging
-            print(f"Workflow started: {self.workflow_id} (promptquality not available)")
-            return {"workflow_id": self.workflow_id, "status": "started"}
+            print("Agent Execution Span: Started (promptquality not available)")
 
     def log_automatic_agent_selector(self, document_content: str, all_available_agents: List[Dict],
                                     loan_detection_result: Dict, selected_agents: List[Dict],
@@ -202,7 +367,7 @@ class GalileoAgentWorkflowLogger:
     def log_agent_execution(self, agent_config: Dict, agent_input_data: Dict,
                            agent_result: Dict, execution_metadata: Optional[Dict] = None) -> None:
         """
-        Log individual agent execution
+        Log individual agent execution within the agent execution span
 
         Args:
             agent_config: Configuration of the agent being executed
@@ -210,8 +375,11 @@ class GalileoAgentWorkflowLogger:
             agent_result: Result returned by the agent
             execution_metadata: Additional metadata about the execution
         """
-        if not self.current_workflow:
-            print("Warning: No active workflow to log agent execution")
+        # Try to log to agent execution span first, fallback to main workflow
+        target_span = self.agent_execution_span if self.agent_execution_span else self.current_workflow
+
+        if not target_span:
+            print("Warning: No active workflow or span to log agent execution")
             return
 
         agent_id = agent_config.get('agent_id', 'unknown')
@@ -231,9 +399,9 @@ class GalileoAgentWorkflowLogger:
 
         execution_output = agent_result
 
-        if PROMPTQUALITY_AVAILABLE and hasattr(self.current_workflow, 'add_llm'):
+        if PROMPTQUALITY_AVAILABLE and hasattr(target_span, 'add_llm'):
             try:
-                self.current_workflow.add_llm(
+                target_span.add_llm(
                     input=json.dumps(execution_input, indent=2),
                     output=json.dumps(execution_output, indent=2),
                     model="gpt-4",
@@ -241,19 +409,42 @@ class GalileoAgentWorkflowLogger:
                         "step_type": "agent_execution",
                         "workflow_phase": "execution",
                         "agent_id": str(agent_id),
+                        "agent_name": str(agent_name),
                         "agent_type": str(agent_config.get('display_type', '')),
                         "agent_priority": str(agent_config.get('priority', '')),
                         "passed": str(execution_output.get('passed', False)),
                         "confidence": str(execution_output.get('confidence', 0.0))
                     }
                 )
-                print(f"Logged execution of agent {agent_id}: {agent_name}")
+                span_location = "agent execution span" if self.agent_execution_span else "main workflow"
+                print(f"Logged execution of agent {agent_id}: {agent_name} in {span_location}")
             except Exception as e:
                 print(f"Error logging agent execution for {agent_id}: {e}")
         else:
             # Fallback logging
             status = "PASSED" if execution_output.get('passed', False) else "FAILED"
             print(f"Agent Execution: {agent_id} ({agent_name}) - {status}")
+
+    def complete_agent_execution_span(self, execution_summary: Dict) -> None:
+        """
+        Complete the agent execution span with final results
+
+        Args:
+            execution_summary: Summary of all agent executions
+        """
+        if not self.agent_execution_span:
+            print("Warning: No active agent execution span to complete")
+            return
+
+        if PROMPTQUALITY_AVAILABLE and hasattr(self.agent_execution_span, 'conclude'):
+            try:
+                self.agent_execution_span.conclude(
+                    output=json.dumps(execution_summary, indent=2)
+                )
+                print(f"Completed agent execution span")
+                self.agent_execution_span = None  # Reset the span
+            except Exception as e:
+                print(f"Error completing agent execution span: {e}")
 
     def log_overall_assessment(self, compliance_results: List[Dict], overall_assessment: Dict) -> None:
         """
