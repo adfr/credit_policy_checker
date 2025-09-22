@@ -200,13 +200,13 @@ def check_compliance_automatic():
         file_path = os.path.join(UPLOAD_FOLDER, filename)
         file.save(file_path)
 
-        # Run automatic compliance check
+        # Run CrewAI compliance check
         document_processor = DocumentProcessor()
-        result = document_processor.check_document_compliance_automatic(
+        result = document_processor.check_document_compliance_crewai(
             file_path,
             available_agents,
             applicant_data,
-            min_relevance_score=min_score,
+            min_score=min_score,
             max_agents=max_agents
         )
 
@@ -216,21 +216,40 @@ def check_compliance_automatic():
         # Add file information to result
         result['file_info'] = {
             'filename': filename,
-            'selection_mode': 'automatic',
-            'auto_selected_count': result.get('automatic_selection', {}).get('total_selected', 0),
-            'total_available_count': result.get('automatic_selection', {}).get('total_available', 0),
+            'selection_mode': 'crewai_sequential',
+            'selected_count': len(result.get('selected_agents', [])),
+            'total_available_count': sum(len(agents) for agents in available_agents.values()),
             'applicant_data_provided': bool(applicant_data)
         }
 
+        # Structure the response to match what the frontend expects
+        compliance_results = result.get('compliance_results', {})
+
+        # Ensure compliance_results has the expected structure
+        if 'compliance_summary' not in compliance_results:
+            compliance_results['compliance_summary'] = {}
+        if 'agent_results' not in compliance_results:
+            compliance_results['agent_results'] = []
+
         return jsonify({
             'success': True,
-            'compliance_results': result['compliance_results'],
-            'document_summary': result['document_summary'],
-            'selected_agents_summary': result['selected_agents_summary'],
-            'automatic_selection': result['automatic_selection'],
+            'compliance_results': compliance_results,
+            'document_summary': result.get('document_summary', {}),
+            'selected_agents': result.get('automatic_selection', {}).get('selected_agents', []),
+            'automatic_selection': {
+                'selected_agents': result.get('automatic_selection', {}).get('selected_agents', []),
+                'total_available': sum(len(agents) for agents in available_agents.values()),
+                'total_selected': len(result.get('automatic_selection', {}).get('selected_agents', [])),
+                'selection_criteria': {
+                    'min_relevance_score': min_score,
+                    'max_agents': max_agents
+                },
+                'loan_detection': result.get('automatic_selection', {}).get('loan_detection', {}),
+                'selection_metadata': result.get('automatic_selection', {}).get('selection_metadata', {})
+            },
             'file_info': result['file_info'],
-            'galileo_session_id': result.get('galileo_session_id'),
-            'selection_mode': 'automatic'
+            'workflow_metadata': result.get('workflow_metadata', {}),
+            'selection_mode': 'crewai_sequential'
         })
 
     except Exception as e:

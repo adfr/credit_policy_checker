@@ -34,7 +34,7 @@ class PolicyAgentExtractor:
 
         self.max_tokens = 500  # Reduced for smaller, more focused chunks
         self.min_chunk_tokens = 200  # Minimum meaningful chunk size
-        self.encoding = tiktoken.encoding_for_model("gpt-4")
+        self.encoding = tiktoken.get_encoding("cl100k_base")  # GPT-4 compatible encoding
         self.storage_service = AgentStorageService()
         self.external_galileo_client = galileo_client
     
@@ -564,7 +564,7 @@ class PolicyAgentExtractor:
                 try:
                     # Use the external Galileo client for consistent logging
                     response = self.external_galileo_client.chat_completion(
-                        model="gpt-5-mini",
+                        model="gpt-4o-mini",
                         messages=[
                             {"role": "system", "content": "You are a policy analysis expert. Extract key policy requirements and create compliance agents."},
                             {"role": "user", "content": prompt}
@@ -663,7 +663,7 @@ class PolicyAgentExtractor:
             if self.external_galileo_client:
                 # Use the external Galileo client for consistent logging
                 response = self.external_galileo_client.chat_completion(
-                    model="gpt-5-mini",
+                    model="gpt-4o-mini",
                     messages=[
                         {"role": "system", "content": "You are a policy analysis expert. Refine extracted policy agents based on user feedback."},
                         {"role": "user", "content": prompt}

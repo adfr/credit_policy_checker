@@ -166,7 +166,7 @@ class GalileoAgentWorkflowLogger:
                 self.automatic_selection_span.add_llm(
                     input=json.dumps(scoring_input, indent=2),
                     output=json.dumps(scoring_output, indent=2),
-                    model="gpt-4",
+                    model="gpt-4o-mini",
                     metadata={
                         "step_type": "agent_scoring",
                         "agent_name": "AgentScorer",
@@ -290,7 +290,7 @@ class GalileoAgentWorkflowLogger:
                 self.current_workflow.add_llm(
                     input=json.dumps(selector_input, indent=2),
                     output=json.dumps(selector_output, indent=2),
-                    model="gpt-4",
+                    model="gpt-4o-mini",
                     metadata={
                         "step_type": "automatic_agent_selector",
                         "workflow_phase": "selection",
@@ -349,7 +349,7 @@ class GalileoAgentWorkflowLogger:
                 self.current_workflow.add_llm(
                     input=json.dumps(selection_input, indent=2),
                     output=json.dumps(selection_output, indent=2),
-                    model="gpt-4",
+                    model="gpt-4o-mini",
                     metadata={
                         "step_type": "agent_selection",
                         "workflow_phase": "selection",
@@ -404,7 +404,7 @@ class GalileoAgentWorkflowLogger:
                 target_span.add_llm(
                     input=json.dumps(execution_input, indent=2),
                     output=json.dumps(execution_output, indent=2),
-                    model="gpt-4",
+                    model="gpt-4o-mini",
                     metadata={
                         "step_type": "agent_execution",
                         "workflow_phase": "execution",
@@ -478,7 +478,7 @@ class GalileoAgentWorkflowLogger:
                 self.current_workflow.add_llm(
                     input=json.dumps(assessment_input, indent=2),
                     output=json.dumps(assessment_output, indent=2),
-                    model="gpt-4",
+                    model="gpt-4o-mini",
                     metadata={
                         "step_type": "overall_assessment",
                         "workflow_phase": "assessment",
@@ -546,7 +546,7 @@ class GalileoAgentWorkflowLogger:
                 self.current_workflow.add_llm(
                     input=json.dumps({"error_context": error_context or {}}, indent=2),
                     output=f"ERROR: {error_message}",
-                    model="gpt-4",
+                    model="gpt-4o-mini",
                     metadata={
                         "step_type": "error",
                         "error_message": error_message,

@@ -24,7 +24,7 @@ class BaseAgent(ABC):
         try:
             # Use Galileo V2 client's chat_completion for automatic tracing
             response = self.galileo_client.chat_completion(
-                model="gpt-5-mini",
+                model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": f"You are a {self.agent_type} agent for credit policy compliance checking."},
                     {"role": "user", "content": prompt}

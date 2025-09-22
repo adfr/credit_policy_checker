@@ -356,6 +356,191 @@ class DocumentProcessor:
                 'galileo_session_id': session_id
             }
 
+    def check_document_compliance_crewai(
+        self,
+        file_path: str,
+        available_agents: Dict,
+        applicant_data: Dict = None,
+        galileo_config: Dict = None,
+        min_score: float = 0.3,
+        max_agents: int = 20
+    ) -> Dict:
+        """
+        Check document compliance using CrewAI sequential workflow with native Galileo integration
+
+        Args:
+            file_path: Path to the credit memo/document
+            available_agents: All available agents from policy extraction
+            applicant_data: Structured applicant data
+            galileo_config: Galileo configuration for API key and project
+
+        Returns:
+            Compliance results with CrewAI workflow metadata
+        """
+        from app.services.crewai_simple_agents import SimplePolicyComplianceCrewAI
+
+        try:
+            # Parse the document to get text content
+            parsed_doc = self.parser.parse_document(file_path)
+
+            if 'error' in parsed_doc:
+                # Ensure frontend-compatible error structure for CrewAI method
+                return {
+                    'error': parsed_doc['error'],
+                    'processing_status': 'error',
+                    'selection_mode': 'crewai_sequential',
+                    'agent_results': [],
+                    'compliance_summary': {
+                        'overall_compliance': False,
+                        'agents_passed': 0,
+                        'total_agents': 0,
+                        'confidence_score': 0,
+                        'recommendations': []
+                    },
+                    'selected_agents': [],
+                    'document_summary': {},
+                    'workflow_metadata': {}
+                }
+
+            # Get text content for compliance checking
+            text_content = parsed_doc.get('text_content', '')
+            if not text_content:
+                return {
+                    'error': 'No text content found in document for compliance checking',
+                    'document_summary': self.parser.get_document_summary(parsed_doc)
+                }
+
+            # Step 1: Automatically select relevant agents first
+            from app.services.automatic_agent_selector import AutomaticAgentSelector
+
+            auto_selector = AutomaticAgentSelector()
+            selection_result = auto_selector.select_agents_automatically(
+                text_content,
+                available_agents,
+                min_score=min_score,
+                max_agents=max_agents
+            )
+
+            selected_agents = selection_result['selected_agents']
+
+            if not selected_agents:
+                return {
+                    'error': 'No relevant agents found for automatic selection',
+                    'loan_detection': selection_result.get('loan_detection', {}),
+                    'selection_metadata': selection_result.get('selection_metadata', {}),
+                    'document_summary': self.parser.get_document_summary(parsed_doc)
+                }
+
+            # Step 2: Extract financial data from document for each agent
+            from app.services.agent_compliance_checker import AgentComplianceChecker
+
+            compliance_checker = AgentComplianceChecker()
+            extracted_data = {}
+
+            # Extract data specifically for each selected agent
+            for agent_config in selected_agents:
+                agent_id = agent_config.get('agent_id', 'unknown')
+                agent_specific_data = compliance_checker._extract_data_for_agent(
+                    text_content, agent_config, applicant_data
+                )
+                extracted_data[agent_id] = agent_specific_data
+
+            # Combine extracted data with applicant data for CrewAI
+            combined_applicant_data = applicant_data.copy() if applicant_data else {}
+
+            # Merge all extracted data fields into a unified dataset
+            for agent_id, agent_data in extracted_data.items():
+                for field, value in agent_data.items():
+                    if not field.startswith('_') and value is not None:
+                        combined_applicant_data[field] = value
+
+            # Initialize CrewAI workflow
+            crew_workflow = SimplePolicyComplianceCrewAI()
+
+            # Run the CrewAI sequential workflow with extracted + applicant data + full document content
+            print(f"🔄 DocumentProcessor: Running CrewAI with {len(selected_agents)} agents")
+            result = crew_workflow.run_compliance_workflow(
+                selected_agents=selected_agents,
+                applicant_data=combined_applicant_data,
+                document_content=text_content,
+                project_name="policy_compliance",
+                log_stream="crewai_policy_checks"
+            )
+
+            print(f"📋 DocumentProcessor: CrewAI result received:")
+            print(f"   - Status: {result.get('status')}")
+            print(f"   - Agent results: {len(result.get('agent_results', []))} items")
+            print(f"   - Compliance summary exists: {'compliance_summary' in result}")
+
+            # Structure response to match frontend expectations
+            # Frontend expects: result.compliance_results.compliance_summary.recommendations
+            compliance_results = {
+                'agent_results': result.get('agent_results', []),
+                'compliance_summary': result.get('compliance_summary', {}),
+                'selected_agents': result.get('selected_agents', []),
+                'workflow_metadata': result.get('workflow_metadata', {})
+            }
+
+            print(f"🚀 DocumentProcessor: Final compliance_results structure:")
+            print(f"   - agent_results: {len(compliance_results['agent_results'])} items")
+            print(f"   - compliance_summary: {compliance_results['compliance_summary']}")
+            print(f"   - statistics: {compliance_results['compliance_summary'].get('statistics', 'MISSING')}")
+
+            # Create automatic selection metadata for frontend
+            automatic_selection = {
+                'selected_agents': selected_agents,
+                'total_available': sum(len(agents) for agents in available_agents.values()) if available_agents else 0,
+                'total_selected': len(selected_agents),
+                'selection_criteria': {
+                    'min_relevance_score': min_score,
+                    'max_agents': max_agents,
+                    'selection_method': 'crewai_simple'
+                },
+                'loan_detection': {
+                    'detected_type': 'mortgage',  # Default for now
+                    'confidence': 0.8,
+                    'key_indicators': ['loan', 'credit', 'mortgage']
+                },
+                'selection_metadata': {
+                    'loan_type_summary': {
+                        'primary_type': 'mortgage',
+                        'subtype': 'conventional',
+                        'confidence': 0.8,
+                        'key_characteristics': ['credit_score', 'debt_to_income', 'loan_to_value']
+                    },
+                    'selection_reasoning': f'Selected {len(selected_agents)} agents using CrewAI simple workflow'
+                }
+            }
+
+            return {
+                'compliance_results': compliance_results,
+                'automatic_selection': automatic_selection,
+                'document_summary': self.parser.get_document_summary(parsed_doc),
+                'processing_status': result.get('status', 'unknown'),
+                'selection_mode': 'crewai_sequential',
+                'text_content_length': len(text_content),
+                'extracted_data': extracted_data,  # Include the extracted data for debugging
+                'combined_applicant_data': combined_applicant_data  # Include final combined data
+            }
+
+        except Exception as e:
+            return {
+                'error': f'CrewAI compliance checking failed: {str(e)}',
+                'processing_status': 'error',
+                'selection_mode': 'crewai_sequential',
+                'agent_results': [],  # Ensure frontend-compatible structure
+                'compliance_summary': {
+                    'overall_compliance': False,
+                    'agents_passed': 0,
+                    'total_agents': 0,
+                    'confidence_score': 0,
+                    'recommendations': []
+                },
+                'selected_agents': [],
+                'document_summary': {},
+                'workflow_metadata': {}
+            }
+
     def get_agent_data_requirements(self, selected_agents: List[Dict]) -> Dict:
         """Get data requirements for selected agents"""
         return self.compliance_checker.get_agent_summary(selected_agents)

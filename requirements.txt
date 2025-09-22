@@ -19,3 +19,7 @@ numpy<2.0.0
 # Galileo AI Observability
 galileo>=1.19.0
 promptquality>=1.5.0
+
+# CrewAI for agent-based workflows
+crewai>=0.41.0
+crewai-tools>=0.4.0

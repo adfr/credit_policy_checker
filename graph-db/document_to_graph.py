@@ -111,7 +111,7 @@ class DocumentToGraph:
         """
         
         response = self.client.chat.completions.create(
-            model="gpt-4.1",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are a policy requirement extraction expert."},
                 {"role": "user", "content": prompt.format(content=content[:8000])}
@@ -154,7 +154,7 @@ class DocumentToGraph:
         """
         
         response = self.client.chat.completions.create(
-            model="gpt-4.1",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are a policy linkage analysis expert."},
                 {"role": "user", "content": prompt.format(requirements=req_summary, content=content[:6000])}

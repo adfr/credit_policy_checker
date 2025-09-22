@@ -1024,14 +1024,29 @@
         }
 
         function displayAssessmentResults(result, isAutomaticMode = false) {
+            // Defensive programming - ensure we have the expected data structure
+            if (!result || !result.compliance_results) {
+                console.error('Invalid assessment result structure:', result);
+                alert('Error: Invalid assessment result structure received');
+                return;
+            }
+
+            console.log('Full assessment result:', result);
+
             const complianceResults = result.compliance_results;
-            const agentResults = complianceResults.agent_results;
-            const summary = complianceResults.compliance_summary;
-            
+            const agentResults = complianceResults.agent_results || [];
+            const summary = complianceResults.compliance_summary || {};
+
+            console.log('Compliance results:', complianceResults);
+            console.log('Agent results:', agentResults);
+            console.log('Agent results length:', agentResults.length);
+            console.log('Summary:', summary);
+            console.log('Summary statistics:', summary.statistics);
+
             // Count agents by origin
             let graphAgentCount = 0;
             let llmAgentCount = 0;
-            
+
             agentResults.forEach(agentResult => {
                 const origin = agentResult.agent_config.agent_origin;
                 if (origin === 'graph_database') {
@@ -1042,11 +1057,27 @@
             });
             
             // Update summary cards
-            document.getElementById('passedChecks').textContent = summary.statistics.passed_agents;
-            document.getElementById('failedChecks').textContent = summary.statistics.failed_agents;
+            let statistics = summary.statistics || {};
+
+            // If statistics are missing or incorrect, calculate them from agent results
+            if (!statistics.passed_agents && !statistics.failed_agents && agentResults.length > 0) {
+                console.log('Statistics missing or invalid, calculating from agent results...');
+                const passedCount = agentResults.filter(result => result.passed === true).length;
+                const failedCount = agentResults.filter(result => result.passed === false).length;
+                statistics = {
+                    passed_agents: passedCount,
+                    failed_agents: failedCount,
+                    total_agents: agentResults.length,
+                    pass_rate: agentResults.length > 0 ? passedCount / agentResults.length : 0
+                };
+                console.log('Calculated statistics:', statistics);
+            }
+
+            document.getElementById('passedChecks').textContent = statistics.passed_agents || 0;
+            document.getElementById('failedChecks').textContent = statistics.failed_agents || 0;
             document.getElementById('graphAgents').textContent = graphAgentCount;
             document.getElementById('llmAgents').textContent = llmAgentCount;
-            document.getElementById('overallScore').textContent = Math.round(summary.statistics.pass_rate * 100) + '%';
+            document.getElementById('overallScore').textContent = Math.round((statistics.pass_rate || 0) * 100) + '%';
 
             // Display automatic selection summary if applicable
             if (isAutomaticMode && result.automatic_selection) {
@@ -1099,24 +1130,27 @@
             // Display recommendations
             const recommendations = document.getElementById('recommendations');
             recommendations.innerHTML = '';
-            
-            summary.recommendations.forEach(rec => {
-                const recDiv = document.createElement('div');
-                recDiv.className = 'bg-yellow-50 border-l-4 border-yellow-400 p-4';
-                
-                recDiv.innerHTML = `
-                    <div class="flex">
-                        <div class="flex-shrink-0">
-                            <i class="fas fa-exclamation-triangle text-yellow-400"></i>
+
+            // Defensive programming - check if summary and recommendations exist
+            if (summary && summary.recommendations && Array.isArray(summary.recommendations)) {
+                summary.recommendations.forEach(rec => {
+                    const recDiv = document.createElement('div');
+                    recDiv.className = 'bg-yellow-50 border-l-4 border-yellow-400 p-4';
+
+                    recDiv.innerHTML = `
+                        <div class="flex">
+                            <div class="flex-shrink-0">
+                                <i class="fas fa-exclamation-triangle text-yellow-400"></i>
+                            </div>
+                            <div class="ml-3">
+                                <p class="text-sm text-yellow-800 font-medium">${rec}</p>
+                            </div>
                         </div>
-                        <div class="ml-3">
-                            <p class="text-sm text-yellow-800 font-medium">${rec}</p>
-                        </div>
-                    </div>
-                `;
-                
-                recommendations.appendChild(recDiv);
-            });
+                    `;
+
+                    recommendations.appendChild(recDiv);
+                });
+            }
 
             document.getElementById('assessmentResults').classList.remove('hidden');
         }
@@ -1270,9 +1304,18 @@
         }
 
         function displayAutomaticSelectionSummary(automaticSelection) {
+            console.log('Automatic selection data:', automaticSelection);
+
             const content = document.getElementById('automaticSelectionContent');
-            const metadata = automaticSelection.selection_metadata;
-            const loanSummary = metadata.loan_type_summary;
+            const metadata = automaticSelection.selection_metadata || {};
+            const loanSummary = metadata.loan_type_summary || {
+                primary_type: 'unknown',
+                subtype: 'unknown',
+                confidence: 0,
+                key_characteristics: []
+            };
+
+            console.log('Loan summary:', loanSummary);
 
             const html = `
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -1291,10 +1334,10 @@
                         <h5 class="font-semibold text-cloudera-blue-800 mb-2">Agent Selection</h5>
                         <p class="text-sm text-gray-700">
                             <i class="fas fa-robot mr-2"></i>
-                            <strong>${automaticSelection.total_selected}</strong> of <strong>${automaticSelection.total_available}</strong> agents selected
+                            <strong>${automaticSelection.total_selected || 0}</strong> of <strong>${automaticSelection.total_available || 0}</strong> agents selected
                         </p>
                         <p class="text-xs text-gray-600 mt-1">
-                            Avg relevance: <span class="font-medium">${Math.round((metadata.selection_stats.avg_relevance_score || 0) * 100)}%</span>
+                            Avg relevance: <span class="font-medium">${Math.round(((metadata.selection_stats || {}).avg_relevance_score || 0) * 100)}%</span>
                         </p>
                     </div>
                 </div>
@@ -1310,7 +1353,7 @@
                 ` : ''}
                 <div>
                     <h5 class="font-semibold text-cloudera-blue-800 mb-2">Selection Reasoning</h5>
-                    <p class="text-sm text-gray-700">${metadata.selection_reasoning}</p>
+                    <p class="text-sm text-gray-700">${metadata.selection_reasoning || 'No reasoning provided'}</p>
                 </div>
             `;
 
