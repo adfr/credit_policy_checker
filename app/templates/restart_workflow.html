@@ -383,7 +383,7 @@
                     <h3 class="text-xl font-semibold text-black mb-4">Assessment Results</h3>
                     
                     <!-- Summary Cards -->
-                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                         <div class="bg-green-50 p-4 rounded-lg text-center">
                             <div class="text-2xl font-bold text-green-800" id="passedChecks">0</div>
                             <div class="text-sm text-green-600">Passed</div>
@@ -391,14 +391,6 @@
                         <div class="bg-red-50 p-4 rounded-lg text-center">
                             <div class="text-2xl font-bold text-red-800" id="failedChecks">0</div>
                             <div class="text-sm text-red-600">Failed</div>
-                        </div>
-                        <div class="bg-blue-50 p-4 rounded-lg text-center">
-                            <div class="text-2xl font-bold text-blue-800" id="graphAgents">0</div>
-                            <div class="text-sm text-blue-600"><i class="fas fa-project-diagram mr-1"></i>Graph DB</div>
-                        </div>
-                        <div class="bg-purple-50 p-4 rounded-lg text-center">
-                            <div class="text-2xl font-bold text-purple-800" id="llmAgents">0</div>
-                            <div class="text-sm text-purple-600"><i class="fas fa-brain mr-1"></i>LLM Only</div>
                         </div>
                     </div>
                     
@@ -1043,18 +1035,7 @@
             console.log('Summary:', summary);
             console.log('Summary statistics:', summary.statistics);
 
-            // Count agents by origin
-            let graphAgentCount = 0;
-            let llmAgentCount = 0;
-
-            agentResults.forEach(agentResult => {
-                const origin = agentResult.agent_config.agent_origin;
-                if (origin === 'graph_database') {
-                    graphAgentCount++;
-                } else {
-                    llmAgentCount++;
-                }
-            });
+            // Note: Graph and LLM agent counters removed
             
             // Update summary cards
             let statistics = summary.statistics || {};
@@ -1075,8 +1056,6 @@
 
             document.getElementById('passedChecks').textContent = statistics.passed_agents || 0;
             document.getElementById('failedChecks').textContent = statistics.failed_agents || 0;
-            document.getElementById('graphAgents').textContent = graphAgentCount;
-            document.getElementById('llmAgents').textContent = llmAgentCount;
             document.getElementById('overallScore').textContent = Math.round((statistics.pass_rate || 0) * 100) + '%';
 
             // Display automatic selection summary if applicable
@@ -1337,7 +1316,7 @@
                             <strong>${automaticSelection.total_selected || 0}</strong> of <strong>${automaticSelection.total_available || 0}</strong> agents selected
                         </p>
                         <p class="text-xs text-gray-600 mt-1">
-                            Avg relevance: <span class="font-medium">${Math.round(((metadata.selection_stats || {}).avg_relevance_score || 0) * 100)}%</span>
+                            Selection method: <span class="font-medium">Automatic CrewAI workflow</span>
                         </p>
                     </div>
                 </div>
@@ -1353,7 +1332,7 @@
                 ` : ''}
                 <div>
                     <h5 class="font-semibold text-cloudera-blue-800 mb-2">Selection Reasoning</h5>
-                    <p class="text-sm text-gray-700">${metadata.selection_reasoning || 'No reasoning provided'}</p>
+                    <p class="text-sm text-gray-700">${metadata.selection_reasoning || `Selected ${automaticSelection.total_selected || 0} agents using CrewAI automatic workflow based on document analysis and policy relevance.`}</p>
                 </div>
             `;
 
